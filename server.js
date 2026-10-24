@@ -15,6 +15,7 @@ import {
   renderProductForm, renderLogin, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
+import { sendOrderConfirmation, sendOrderUpdate, mailConfigured } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
@@ -47,7 +48,10 @@ app.post(
     }
     if (event.type === "checkout.session.completed") {
       const order = markPaid(event.data.object.id);
-      if (order) console.log(`paid: ${order.number}`);
+      if (order) {
+        console.log(`paid: ${order.number}`);
+        sendOrderConfirmation(order, `${baseFor(req)}/order/${order.token}`);
+      }
     }
     res.json({ received: true });
   }
@@ -114,16 +118,19 @@ app.post("/api/checkout", async (req, res) => {
 
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {
-      const { token } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
+      const { number, token } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
       reserveStock(lines);
+      const link = `${baseFor(req)}/order/${token}`;
+      sendOrderConfirmation(getOrder(number), link);
       return res.json({ url: `/order/${token}` });
     }
 
     // Demo mode: simulate a successful card payment so the whole flow is testable without keys.
     if (!stripe) {
       if (!DEMO) return res.status(503).json({ error: "Card payments are not configured yet. Choose e-Transfer, or add Stripe keys." });
-      const { token } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
+      const { number, token } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
       reserveStock(lines);
+      sendOrderConfirmation(getOrder(number), `${baseFor(req)}/order/${token}`);
       return res.json({ url: `/order/${token}` });
     }
 
@@ -381,7 +388,10 @@ app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
   const allowed = ["pending", "awaiting_etransfer", "paid", "packed", "completed", "cancelled"];
   const status = String(req.body.status || "");
   if (!allowed.includes(status)) return res.status(400).send("Bad status.");
-  setStatus(req.params.number, status);
+  const order = setStatus(req.params.number, status);
+  if (order && ["paid", "packed", "completed", "cancelled"].includes(status)) {
+    sendOrderUpdate(order, `${baseFor(req)}/order/${order.token}`);
+  }
   res.redirect("/admin");
 });
 
@@ -463,5 +473,6 @@ app.listen(PORT, () => {
   console.log(`${site.name} on ${BASE_URL || "(request origin)"} (port ${PORT})`);
   console.log(`  stripe: ${stripe ? "live keys" : DEMO ? "DEMO mode (simulated)" : "not configured"}`);
   console.log(`  e-transfer: ${ETRANSFER_EMAIL}`);
+  console.log(`  email: ${mailConfigured() ? "Resend configured" : "off (no RESEND_API_KEY)"}`);
   console.log(`  products: ${listProducts().length}`);
 });
