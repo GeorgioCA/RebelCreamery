@@ -1,59 +1,109 @@
-# Print agent — Brother QL-800
+# labelprint — background label printing
 
-The store never talks to the printer directly. It writes a row to `print_jobs` when you click
-**Label**; this agent polls for queued jobs, renders a label at 62 mm / 300 dpi and prints it over
-USB. That means the store can live on a server anywhere and the printer only needs to be plugged
-into a machine that can run Python.
+One script that sits in the background and prints labels: for the Rebel Creamery store, and for
+anything else on the same machine or LAN. Sized for a **Brother QL-800** on 62 mm tape, but the CUPS
+backend drives any printer you have a queue for.
 
-## Hardware
+```
+sources                      backends
+ store  poll the shop   ─┐    brother  QL-800 USB via brother_ql
+ spool  watch a folder  ─┼──► cups     any CUPS queue (lp)
+ http   LAN endpoint    ─┘    file     write PNGs (dry run / network share)
+```
 
-- Brother **QL-800** (USB only) — the wireless siblings (QL-810W, QL-820NWB) also work through
-  `brother_ql`, just with a network identifier instead of USB.
-- Tape: **DK-22205** (62 mm continuous) is what the label layout assumes. DK-1202 (62 × 100 mm
-  die-cut) works too if you set `LABEL=62x100`.
-- The QL-800 prints 696 px across at 300 dpi. Everything below is sized to that.
-
-## Install (on the machine with the printer — a Raspberry Pi is fine)
+## Install
 
 ```sh
 sudo apt-get install -y libusb-1.0-0 python3-pip
 sudo pip3 install --break-system-packages -r requirements.txt
 ```
 
-USB access without root — add `/etc/udev/rules.d/99-brother-ql.rules`:
+`requests` is only needed for the `store` and `http` sources; `brother_ql` only for the USB backend.
+Everything else runs on Pillow alone.
+
+USB access without root — `/etc/udev/rules.d/99-brother-ql.rules`:
 
 ```
 SUBSYSTEM=="usb", ATTR{idVendor}=="04f9", MODE="0666", GROUP="plugdev"
 ```
 
-then `sudo udevadm control --reload-rules && sudo udevadm trigger` and replug the printer.
+`sudo udevadm control --reload-rules && sudo udevadm trigger`, replug. Confirm with
+`python3 labelprint.py printers`.
 
-Find the identifier (usually `usb://0x04f9:0x209b` for the QL-800):
+## Three ways to run it
 
-```sh
-python3 -c "from brother_ql.backends.helpers import discover; print(discover())"
-```
-
-## Run
+**Store queue** — the shop writes jobs when you click `Label` / `Queue labels`:
 
 ```sh
-STORE_URL=https://shop.example.ca \
-PRINT_TOKEN=<same value as the store> \
-DRY_RUN=1 ONCE=1 python3 agent.py      # render to ./labels, print nothing
+STORE_URL=https://shop.example.ca PRINT_TOKEN=… \
+python3 labelprint.py run --source store --backend brother
 ```
+
+**Spool folder** — any program (cron, a spreadsheet export, a shell script) drops a `.json` file in
+and it prints; the file moves to `printed/` or `failed/`:
 
 ```sh
-STORE_URL=https://shop.example.ca PRINT_TOKEN=... python3 agent.py
+python3 labelprint.py run --source spool --spool-dir /var/spool/labels --backend brother
 ```
 
-Set `PRINT_TOKEN` on the store too, otherwise `/api/print/*` returns 503.
+**HTTP endpoint** — POST a job from anywhere on the LAN, or POST raw PNG bytes:
 
-### systemd
+```sh
+python3 labelprint.py serve --port 8099 --token lan-secret --backend brother
+curl -X POST localhost:8099/print -H 'X-Print-Token: lan-secret' \
+     -H 'Content-Type: application/json' -d '{"heading":"Name Badge","subheading":"Hermes"}'
+curl -X POST localhost:8099/print -H 'X-Print-Token: lan-secret' \
+     -H 'Content-Type: image/png' --data-binary @label.png
+```
+
+`GET /health` reports liveness. With no `--token` the endpoint is open — only do that on a trusted
+network.
+
+## One-offs and previews
+
+```sh
+python3 labelprint.py print --heading "Smoked Cheddar" --sub "220 g" \
+  --row "Packed=$(date +%d\ %b\ %Y)" --body "Whole milk, salt, cultures, rennet." \
+  --allergens Milk --footer "Keep refrigerated" --backend brother
+
+python3 labelprint.py preview job.json -o label.png     # render only, never prints
+```
+
+## Job format
+
+```json
+{
+  "heading": "Smoked Cheddar",
+  "subheading": "220 g",
+  "logo": "/home/pi/logo.png",
+  "rows": [["Packed", "24 Oct 2026"], ["Best before", "21 Nov 2026"]],
+  "items": [{"qty": 2, "name": "Yogurt 750 g"}],
+  "body": "Whole milk, salt, cultures, microbial rennet.",
+  "allergens": "Milk",
+  "footer": ["Keep refrigerated", "Rebel Creamery · Calgary, AB"],
+  "copies": 2,
+  "height_mm": 40,
+  "printer": "brother"
+}
+```
+
+- `heading` → large name, `subheading` → size/price line, `body` → wrapped paragraph.
+- `rows` → label/value pairs; leave the label empty for a plain line.
+- `allergens` → boxed and bold (food labels).
+- `height_mm` → fixes the label height for die-cut stock (content is cropped, with a warning if it
+  overflows); omit it for continuous tape, where height follows the content.
+- `copies` → 1–50, printed sequentially.
+- `printer` → per-job override of the backend.
+
+Store payloads (`kind: order|product`) are accepted as-is — they are normalised into this shape.
+
+## systemd
 
 ```ini
 [Unit]
-Description=Rebel Creamery label printer
+Description=Label printer
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 WorkingDirectory=/home/pi/rebel-creamery/print-agent
@@ -61,32 +111,27 @@ Environment=STORE_URL=https://shop.example.ca
 Environment=PRINT_TOKEN=change-me
 Environment=PRINTER=usb://0x04f9:0x209b
 Environment=PRINTER_MODEL=QL-800
-ExecStart=/usr/bin/python3 agent.py
+ExecStart=/usr/bin/python3 labelprint.py run --source store --backend brother
 Restart=always
 RestartSec=5
+User=pi
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-```sh
-sudo cp rebel-labels.service /etc/systemd/system/
-sudo systemctl enable --now rebel-labels
-journalctl -u rebel-labels -f
-```
+`sudo systemctl enable --now rebel-labels && journalctl -u rebel-labels -f`.
 
-## What gets printed
+## Other uses
 
-- **Order label** (from the order book's `Label` button): order number, customer, pickup or delivery
-  window, every line item with quantity, date, storage line.
-- **Product label** (from the product page, 1–20 copies): name, net weight, ingredients, allergen,
-  packed date, calculated best-before, business line.
+Because the spool and HTTP sources take plain JSON, the same daemon covers:
 
-Best-before = print date + the product's *shelf life (days)*, which is set per product in the
-back office along with ingredients and allergens.
+- **Batch labels** — loop over a CSV, write one JSON per jar, `run --source spool` once.
+- **Name badges** — `heading` = name, `subheading` = role, `rows` = table/meal choice.
+- **Price tags** — `heading` = product, `subheading` = price, `body` = unit price.
+- **Shipping labels** — `printer: "cups"` with `media` set for a laser queue.
 
 ## Browser fallback
 
-`/admin/labels/order/<number>` and `/admin/labels/product/<id>` open a 62 mm page that auto-opens
-the print dialog. That path uses Brother's own CUPS/driver install instead of this agent — useful on
-a Windows or Mac machine, or for a one-off print from a phone.
+`/admin/labels/order/<number>` and `/admin/labels/product/<id>` on the store render a 62 mm page and
+open the print dialog — useful from a phone or a machine without this script.

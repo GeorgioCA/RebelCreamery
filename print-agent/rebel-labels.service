@@ -1,5 +1,5 @@
 [Unit]
-Description=Rebel Creamery label printer
+Description=Label printer (Rebel Creamery + spool/HTTP jobs)
 After=network-online.target
 Wants=network-online.target
 
@@ -10,7 +10,7 @@ Environment=PRINT_TOKEN=change-me
 Environment=PRINTER=usb://0x04f9:0x209b
 Environment=PRINTER_MODEL=QL-800
 Environment=LABEL=62
-ExecStart=/usr/bin/python3 agent.py
+ExecStart=/usr/bin/python3 labelprint.py run --source store --backend brother
 Restart=always
 RestartSec=5
 User=pi

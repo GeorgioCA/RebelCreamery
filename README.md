@@ -62,10 +62,11 @@ Two ways to print, both sized for **62 mm continuous DK-22205 tape** at 300 dpi 
 Set `PRINT_TOKEN` to the same value on the store and the agent; leaving it empty disables `/api/print/*`
 (503) and the queue endpoints. `BUSINESS_ADDRESS` is printed in the footer of every label.
 
-The agent lives in [`print-agent/`](print-agent/) — `pip install -r requirements.txt`, then
-`STORE_URL=… PRINT_TOKEN=… python3 agent.py`. `DRY_RUN=1` renders PNGs instead of printing so you can
-check layout before wasting tape. Full setup, udev rules and a systemd unit are in
-[`print-agent/README.md`](print-agent/README.md).
+The daemon lives in [`print-agent/labelprint.py`](print-agent/) — one script, three sources (shop
+queue, spool folder, LAN HTTP) and three backends (Brother USB, CUPS, PNG files). Run the shop path with
+`STORE_URL=… PRINT_TOKEN=… python3 labelprint.py run --source store --backend brother`; `--backend file`
+renders PNGs so you can check layout before wasting tape. Full setup, job format, udev rules and a
+systemd unit are in [`print-agent/README.md`](print-agent/README.md).
 
 Products carry their own **ingredients**, **allergens** and **shelf life (days)**; best-before is
 computed from the print date. These labels are operational (name, net weight, ingredients, allergen,
@@ -163,7 +164,7 @@ server.js              routes, checkout, webhook, admin auth
 lib/catalog.js         site copy, delivery rules, illustration styles, seed catalog
 lib/db.js              SQLite schema, products, orders, stock, print queue
 lib/labels.js          label payloads + 62 mm HTML labels
-print-agent/           USB print agent for the QL-800 (Python)
+print-agent/           labelprint.py — background label printer (store/spool/HTTP → USB/CUPS/file)
 lib/views.js           server-rendered HTML (home, checkout, success, admin)
 public/styles.css      the whole design system
 public/app.js          cart, drawer, checkout form
