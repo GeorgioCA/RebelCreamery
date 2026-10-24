@@ -7,7 +7,9 @@ import {
 import { renderHome, renderCheckout, renderSuccess, renderAdmin, render404 } from "./lib/views.js";
 
 const PORT = Number(process.env.PORT || 3000);
-const BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
+const BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+// Behind Coolify's proxy, derive the public origin from the request when PUBLIC_BASE_URL is unset.
+const baseFor = (req) => BASE_URL || `${req.protocol}://${req.get("host")}`;
 const DEMO = process.env.DEMO_MODE === "1";
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || "";
 const stripe = STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
@@ -148,8 +150,8 @@ app.post("/api/checkout", async (req, res) => {
             }]
           : [])
       ],
-      success_url: `${BASE_URL}/success?order=${encodeURIComponent(number)}`,
-      cancel_url: `${BASE_URL}/checkout?canceled=1`,
+      success_url: `${baseFor(req)}/success?order=${encodeURIComponent(number)}`,
+      cancel_url: `${baseFor(req)}/checkout?canceled=1`,
       payment_intent_data: { metadata: { order_number: number } }
     });
 
@@ -216,7 +218,7 @@ app.post("/admin/stock", adminAuth, (req, res) => {
 app.use((_req, res) => res.status(404).send(render404()));
 
 app.listen(PORT, () => {
-  console.log(`${site.name} on ${BASE_URL} (port ${PORT})`);
+  console.log(`${site.name} on ${BASE_URL || "(request origin)"} (port ${PORT})`);
   console.log(`  stripe: ${stripe ? "live keys" : DEMO ? "DEMO mode (simulated)" : "not configured"}`);
   console.log(`  e-transfer: ${ETRANSFER_EMAIL}`);
 });

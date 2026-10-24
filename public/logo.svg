@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rebel Creamery">
+  <rect width="512" height="512" rx="112" fill="#1d2a21"/>
+  <path d="M256 96c52 62 84 101 84 142a84 84 0 0 1-168 0c0-41 32-80 84-142z" fill="#f4c95d"/>
+  <path d="M256 300v96" stroke="#f4c95d" stroke-width="14" stroke-linecap="round" opacity=".55"/>
+</svg>

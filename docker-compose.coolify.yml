@@ -1,0 +1,72 @@
+# documentation: https://github.com/GeorgioCA/RebelCreamery
+# slogan: Self-hosted dairy storefront — Stripe Checkout, Interac e-Transfer, SQLite order book.
+# category: e-commerce
+# tags: store, ecommerce, stripe, dairy, sqlite
+# logo: https://raw.githubusercontent.com/GeorgioCA/RebelCreamery/main/public/logo.svg
+# port: 3000
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+
+    environment:
+      # Coolify fills this from the Domains field; the suffix is the container port.
+      - SERVICE_FQDN_WEB_3000
+      - PORT=3000
+      - DATA_DIR=/data
+      - NODE_ENV=production
+
+      # Identity
+      - SITE_NAME=${SITE_NAME:-Rebel Creamery}
+      - SITE_TAGLINE=${SITE_TAGLINE:-Small-batch dairy, made in Calgary.}
+      - CONTACT_EMAIL=${CONTACT_EMAIL:-hello@rebelcreamery.ca}
+      - CONTACT_PHONE=${CONTACT_PHONE:-}
+      - INSTAGRAM=${INSTAGRAM:-}
+      # Optional. Leave empty to derive the origin from the request (works behind Coolify's proxy).
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+
+      # Pickup and delivery
+      - PICKUP_LOCATION=${PICKUP_LOCATION:-Calgary Farmers' Market — 510 77 Ave SE}
+      - PICKUP_WINDOW=${PICKUP_WINDOW:-Saturdays, 9 am – 2 pm}
+      - CUTOFF_TEXT=${CUTOFF_TEXT:-Order by Thursday 6 pm for weekend pickup}
+      - DELIVERY_AREA=${DELIVERY_AREA:-Calgary city limits}
+      - DELIVERY_WINDOWS=${DELIVERY_WINDOWS:-Fridays, 12 – 6 pm}
+      - DELIVERY_FEE_CENTS=${DELIVERY_FEE_CENTS:-800}
+      - FREE_DELIVERY_THRESHOLD_CENTS=${FREE_DELIVERY_THRESHOLD_CENTS:-4000}
+      - LICENCE_TEXT=${LICENCE_TEXT:-Made in Alberta under provincial food-safety rules. Licensing and inspection details available on request.}
+
+      # Payments. DEMO_MODE=0 means real Stripe only; card is hidden until a key is set.
+      - DEMO_MODE=${DEMO_MODE:-0}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - ETRANSFER_EMAIL=${ETRANSFER_EMAIL:-hello@rebelcreamery.ca}
+
+      # Back office (/admin). Leave ADMIN_PASSWORD empty and the route returns 503 instead of opening.
+      - ADMIN_USER=${ADMIN_USER:-owner}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+
+    volumes:
+      - creamery-data:/data
+
+    expose:
+      - "3000"
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  creamery-data:

@@ -80,12 +80,33 @@ halloumi while one is still paying.
 
 ## Deploy on Coolify
 
-- New resource → Docker Compose → point at this repo (or paste `docker-compose.yml`).
-- Add the env vars from `.env.example` in the Coolify UI. Set `PUBLIC_BASE_URL` to the real domain.
-- Mount a persistent volume at `/data` — that is the SQLite file and therefore the order book.
-- Set the domain on the `web` service, then deploy. Coolify's proxy terminates TLS.
+Use **`docker-compose.coolify.yml`** — not the dev `docker-compose.yml`, which publishes a host port.
 
-If the repo is private, use a deploy key. The image builds with `node:22-alpine`; nothing else is needed.
+1. **New resource → Docker Compose**, point at `https://github.com/GeorgioCA/RebelCreamery`, branch `main`,
+   compose location `/docker-compose.coolify.yml`.
+2. **Domain** on the `web` service: enter it with the container port, e.g. `https://shop.example.ca:3000`.
+   The `:3000` is what Coolify's proxy routes to; the public site is still 443. Coolify fills
+   `SERVICE_FQDN_WEB_3000` from the first domain in that list.
+3. **Environment variables** — set these in the panel; the compose substitutes them into the container:
+
+   | Variable | Required | Default if unset |
+   |---|---|---|
+   | `ADMIN_PASSWORD` | yes (else `/admin` returns 503) | empty |
+   | `ADMIN_USER` | no | `owner` |
+   | `STRIPE_SECRET_KEY` | for cards | empty — card option hidden |
+   | `STRIPE_WEBHOOK_SECRET` | for cards | empty — orders stay `pending` |
+   | `ETRANSFER_EMAIL` | yes | `hello@rebelcreamery.ca` |
+   | `SITE_NAME`, `CONTACT_EMAIL`, `PICKUP_LOCATION`, `PICKUP_WINDOW` | no | dairy defaults |
+   | `PUBLIC_BASE_URL` | no | derived from the request |
+
+4. **Volume**: `creamery-data` mounts at `/data` — that is the entire order book. It is declared in the
+   compose, so it is read-only in the panel's Persistent Storage page; back it up from the host.
+5. **Healthcheck** hits `/health` inside the container. The stack declares `expose:` only (no `ports:`),
+   so the app is never reachable except through Coolify's proxy.
+6. `DEMO_MODE` defaults to `0` here: card checkout stays disabled until a Stripe key exists, rather than
+   silently simulating payments in production.
+
+No database container, no migrations to run, no build step beyond the Dockerfile.
 
 ## Backups
 
