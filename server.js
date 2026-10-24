@@ -12,7 +12,7 @@ import {
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
-  renderProductForm, render404
+  renderProductForm, renderLogin, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
 
@@ -176,14 +176,71 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* --------------------------------- admin --------------------------------- */
 
+/* ------------------------------- back office auth -------------------------
+   Cookie session, because some proxies/CDNs strip the Authorization header from
+   browser requests. Basic auth is still accepted for curl and scripts.        */
+
+const SESSION_COOKIE = "admin_session";
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.ADMIN_PASSWORD || "dev-secret";
+
+function signSession(user) {
+  const exp = Date.now() + SESSION_TTL_MS;
+  const payload = `${user}.${exp}`;
+  const sig = crypto.createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifySession(token) {
+  if (!token) return false;
+  const [user, exp, sig] = String(token).split(".");
+  if (!user || !exp || !sig) return false;
+  const expect = crypto.createHmac("sha256", SESSION_SECRET).update(`${user}.${exp}`).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(expect);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  return Number(exp) > Date.now() && user === process.env.ADMIN_USER;
+}
+
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === name) return decodeURIComponent(v.join("="));
+  }
+  return "";
+}
+
+function credentialsOk(u, p) {
+  const user = process.env.ADMIN_USER, pass = process.env.ADMIN_PASSWORD;
+  if (!user || !pass) return false;
+  const ea = Buffer.from(String(u)), eb = Buffer.from(user);
+  const pa = Buffer.from(String(p)), pb = Buffer.from(pass);
+  return ea.length === eb.length && pa.length === pb.length &&
+    crypto.timingSafeEqual(ea, eb) && crypto.timingSafeEqual(pa, pb);
+}
+
+function isHttps(req) {
+  return req.secure || String(req.headers["x-forwarded-proto"] || "").split(",")[0] === "https";
+}
+
 function adminAuth(req, res, next) {
   const user = process.env.ADMIN_USER;
   const pass = process.env.ADMIN_PASSWORD;
   if (!user || !pass) return res.status(503).send("Set ADMIN_USER and ADMIN_PASSWORD to use the back office.");
+
+  if (verifySession(readCookie(req, SESSION_COOKIE))) return next();
+
   const header = req.headers.authorization || "";
   if (header.startsWith("Basic ")) {
     const [u, p] = Buffer.from(header.slice(6), "base64").toString().split(":");
-    if (u === user && p === pass) return next();
+    if (credentialsOk(u, p)) return next();
+  }
+
+  // Browsers get the sign-in page; scripts still get a plain 401.
+  const wantsHtml = (req.method === "GET" || req.method === "HEAD") &&
+    String(req.headers.accept || "").includes("text/html");
+  if (wantsHtml) {
+    const next_ = encodeURIComponent(req.originalUrl || "/admin");
+    return res.redirect(`/admin/login?next=${next_}`);
   }
   res.set("WWW-Authenticate", 'Basic realm="Order book", charset="UTF-8"');
   res.status(401).send("Authentication required.");
@@ -199,6 +256,32 @@ const upload = multer({
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => cb(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype))
+});
+
+app.get("/admin/login", (req, res) => {
+  const next = String(req.query.next || "/admin");
+  if (verifySession(readCookie(req, SESSION_COOKIE))) return res.redirect(next.startsWith("/admin") ? next : "/admin");
+  res.send(renderLogin({ next: next.startsWith("/admin") ? next : "/admin" }));
+});
+
+app.post("/admin/login", (req, res) => {
+  const next = String(req.body.next || "/admin");
+  const target = next.startsWith("/admin") ? next : "/admin";
+  if (limited(`login:${req.ip}`, 10, 10 * 60_000)) {
+    return res.status(429).send(renderLogin({ error: "Too many attempts. Wait a few minutes.", next: target }));
+  }
+  if (!credentialsOk(req.body.username, req.body.password)) {
+    return res.status(401).send(renderLogin({ error: "Wrong username or password.", next: target }));
+  }
+  res.cookie(SESSION_COOKIE, signSession(process.env.ADMIN_USER), {
+    httpOnly: true, sameSite: "lax", secure: isHttps(req), maxAge: SESSION_TTL_MS, path: "/"
+  });
+  res.redirect(target);
+});
+
+app.post("/admin/logout", (_req, res) => {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.redirect("/admin/login");
 });
 
 app.get("/admin", adminAuth, (req, res) => {
