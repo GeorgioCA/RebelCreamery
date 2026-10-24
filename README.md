@@ -48,6 +48,30 @@ size, price, description, tags, stock, max-per-order, sort order and either an u
 
 The seed catalog in `lib/catalog.js` is only used once, to populate an empty database.
 
+## Labels (Brother QL-800)
+
+Two ways to print, both sized for **62 mm continuous DK-22205 tape** at 300 dpi (696 px):
+
+1. **Queue from the back office** — `Label` on any order, or `Queue labels` on a product page with a
+   copy count. The store writes a `print_jobs` row; the agent on the machine with the printer picks
+   it up, renders and prints it over USB. Works with the shop on any server, printer behind a home
+   router, no port forwarding.
+2. **Print from the browser** — `/admin/labels/order/<number>` or `/admin/labels/product/<id>` renders
+   a 62 mm page and opens the print dialog. Needs Brother's own driver/CUPS on that machine.
+
+Set `PRINT_TOKEN` to the same value on the store and the agent; leaving it empty disables `/api/print/*`
+(503) and the queue endpoints. `BUSINESS_ADDRESS` is printed in the footer of every label.
+
+The agent lives in [`print-agent/`](print-agent/) — `pip install -r requirements.txt`, then
+`STORE_URL=… PRINT_TOKEN=… python3 agent.py`. `DRY_RUN=1` renders PNGs instead of printing so you can
+check layout before wasting tape. Full setup, udev rules and a systemd unit are in
+[`print-agent/README.md`](print-agent/README.md).
+
+Products carry their own **ingredients**, **allergens** and **shelf life (days)**; best-before is
+computed from the print date. These labels are operational (name, net weight, ingredients, allergen,
+packed/best-before, storage) — they are not a substitute for a nutrition facts panel or bilingual
+retail labelling if you move into grocery.
+
 ## Configuration
 
 Everything lives in `.env`:
@@ -137,7 +161,9 @@ docker run --rm -v rebel-creamery_creamery-data:/data -v "$PWD":/backup alpine \
 ```
 server.js              routes, checkout, webhook, admin auth
 lib/catalog.js         site copy, delivery rules, illustration styles, seed catalog
-lib/db.js              SQLite schema, products, orders, stock
+lib/db.js              SQLite schema, products, orders, stock, print queue
+lib/labels.js          label payloads + 62 mm HTML labels
+print-agent/           USB print agent for the QL-800 (Python)
 lib/views.js           server-rendered HTML (home, checkout, success, admin)
 public/styles.css      the whole design system
 public/app.js          cart, drawer, checkout form

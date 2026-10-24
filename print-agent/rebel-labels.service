@@ -1,0 +1,19 @@
+[Unit]
+Description=Rebel Creamery label printer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/home/pi/rebel-creamery/print-agent
+Environment=STORE_URL=https://shop.example.ca
+Environment=PRINT_TOKEN=change-me
+Environment=PRINTER=usb://0x04f9:0x209b
+Environment=PRINTER_MODEL=QL-800
+Environment=LABEL=62
+ExecStart=/usr/bin/python3 agent.py
+Restart=always
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target

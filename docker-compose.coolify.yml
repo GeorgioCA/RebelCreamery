@@ -45,6 +45,10 @@ services:
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - ETRANSFER_EMAIL=${ETRANSFER_EMAIL:-hello@rebelcreamery.ca}
 
+      # Labels. PRINT_TOKEN must match the print agent's env; empty disables /api/print/*.
+      - PRINT_TOKEN=${PRINT_TOKEN:-}
+      - BUSINESS_ADDRESS=${BUSINESS_ADDRESS:-Rebel Creamery · Calgary, AB}
+
       # Back office (/admin). Leave ADMIN_PASSWORD empty and the route returns 503 instead of opening.
       - ADMIN_USER=${ADMIN_USER:-owner}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}

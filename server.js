@@ -6,13 +6,15 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
-  db, UPLOAD_DIR, createOrder, deleteProduct, getOrder, getProduct, listOrders, listProducts,
-  markPaid, releaseStock, reserveStock, salesSummary, saveProduct, setStatus, setStock
+  db, UPLOAD_DIR, claimPrintJobs, createOrder, deleteProduct, enqueuePrint, finishPrintJob,
+  getOrder, getProduct, listOrders, listProducts, markPaid, printQueueSummary, releaseStock,
+  reserveStock, salesSummary, saveProduct, setStatus, setStock
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
   renderProductForm, render404
 } from "./lib/views.js";
+import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
@@ -23,6 +25,7 @@ const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || "";
 const stripe = STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
 const ETRANSFER_EMAIL = process.env.ETRANSFER_EMAIL || site.email;
 const ART_IDS = artOptions.map((a) => a.id);
+const PRINT_TOKEN = process.env.PRINT_TOKEN || "";
 
 const app = express();
 app.set("trust proxy", true);
@@ -198,8 +201,11 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype))
 });
 
-app.get("/admin", adminAuth, (_req, res) => {
-  res.send(renderAdmin({ orders: listOrders(100), summary: salesSummary(), products: listProducts() }));
+app.get("/admin", adminAuth, (req, res) => {
+  res.send(renderAdmin({
+    orders: listOrders(100), summary: salesSummary(), products: listProducts(),
+    printQueue: printQueueSummary(), queued: req.query.queued === "1"
+  }));
 });
 
 app.get("/admin/products", adminAuth, (_req, res) => {
@@ -213,7 +219,7 @@ app.get("/admin/products/new", adminAuth, (_req, res) => {
 app.get("/admin/products/:id", adminAuth, (req, res) => {
   const product = getProduct(req.params.id);
   if (!product) return res.status(404).send(renderProductForm({ product: null, error: "That product no longer exists." }));
-  res.send(renderProductForm({ product }));
+  res.send(renderProductForm({ product, queued: Number(req.query.queued) || 0 }));
 });
 
 function parseProductBody(body) {
@@ -230,6 +236,9 @@ function parseProductBody(body) {
     maxPerOrder: Math.min(50, Math.max(1, parseInt(body.max, 10) || 12)),
     sortOrder: Math.max(0, parseInt(body.sort, 10) || 100),
     active: body.active === "1",
+    ingredients: String(body.ingredients || "").trim(),
+    allergens: String(body.allergens || "Milk").trim() || "Milk",
+    shelfLifeDays: Math.min(365, Math.max(1, parseInt(body.shelf_life_days, 10) || 14)),
     image: null
   };
 }
@@ -293,6 +302,62 @@ app.post("/admin/stock", adminAuth, (req, res) => {
   const qty = Number(req.body.qty);
   if (getProduct(id) && Number.isInteger(qty) && qty >= 0) setStock(id, qty);
   res.redirect("/admin");
+});
+
+/* --------------------------------- labels -------------------------------- */
+
+app.post("/admin/print/order/:number", adminAuth, (req, res) => {
+  const order = getOrder(req.params.number);
+  if (!order) return res.status(404).send("No such order.");
+  enqueuePrint("order", orderLabel(order), 1);
+  res.redirect("/admin?queued=1");
+});
+
+app.post("/admin/print/product/:id", adminAuth, (req, res) => {
+  const product = getProduct(req.params.id);
+  if (!product) return res.status(404).send("No such product.");
+  const copies = Math.min(20, Math.max(1, parseInt(req.body.copies, 10) || 1));
+  enqueuePrint("product", productLabel(product, copies), copies);
+  res.redirect(`/admin/products/${encodeURIComponent(product.id)}?queued=${copies}`);
+});
+
+app.get("/admin/labels/order/:number", adminAuth, (req, res) => {
+  const order = getOrder(req.params.number);
+  if (!order) return res.status(404).send("No such order.");
+  res.send(renderOrderLabelHTML(order));
+});
+
+app.get("/admin/labels/product/:id", adminAuth, (req, res) => {
+  const product = getProduct(req.params.id);
+  if (!product) return res.status(404).send("No such product.");
+  res.send(renderProductLabelHTML(product));
+});
+
+/* ------------------------------ print agent API --------------------------- */
+
+function printAuth(req, res, next) {
+  if (!PRINT_TOKEN) return res.status(503).send("Printing is not configured. Set PRINT_TOKEN.");
+  const given = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const a = Buffer.from(given), b = Buffer.from(PRINT_TOKEN);
+  if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
+  res.status(401).send("Bad print token.");
+}
+
+app.get("/api/print/jobs", printAuth, (req, res) => {
+  res.json({ jobs: claimPrintJobs(Math.min(20, Number(req.query.limit) || 10)) });
+});
+
+app.post("/api/print/jobs/:id/done", printAuth, (req, res) => {
+  try {
+    finishPrintJob(Number(req.params.id), String(req.body.status || "printed"), req.body.error || null);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/print/status", printAuth, (_req, res) => {
+  res.json({ queue: printQueueSummary(), configured: true });
 });
 
 app.use((_req, res) => res.status(404).send(render404()));
