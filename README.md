@@ -106,6 +106,8 @@ lib/views.js           server-rendered HTML (home, checkout, success, admin)
 public/styles.css      the whole design system
 public/app.js          cart, drawer, checkout form
 public/fonts/          Fraunces + Inter, self-hosted (no Google request at runtime)
+scripts/               restart-preview.sh — local server on :3100
+tests/                 e2e.py (Playwright checkout flow), shot.py (screenshots), check.py (layout probes)
 ```
 
 ## Known gaps
