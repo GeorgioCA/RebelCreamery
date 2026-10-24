@@ -120,10 +120,10 @@ ul,ol,dl{margin:0;padding:0}
 /* --------------------------------- ticker -------------------------------- */
 
 .ticker{border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;background:rgba(243,234,216,.5)}
-.ticker-track{display:flex;gap:34px;white-space:nowrap;padding:15px 0;animation:slide 92s linear infinite;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+.ticker-track{display:flex;width:max-content;padding:15px 0;animation:slide 92s linear infinite;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
 .ticker-track .dot{color:var(--clay)}
+.ticker-group{display:flex;align-items:center;gap:34px;padding-right:34px;white-space:nowrap}
 @keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-@media (prefers-reduced-motion:reduce){.ticker-track{animation:none;white-space:normal;flex-wrap:wrap;justify-content:center;gap:10px 24px}.ticker-track .dot{display:none}}
 
 /* ---------------------------------- shop --------------------------------- */
 
@@ -358,6 +358,9 @@ table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860p
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}
   html{scroll-behavior:auto}
+  /* The brand ticker is a slow, decorative marquee (23 px/s) and is meant to stay in motion;
+     it is aria-hidden, so opt it back in after the blanket reset above. */
+  .ticker-track{animation-duration:92s!important}
 }
 
 /* --------------------------- product manager ----------------------------- */
