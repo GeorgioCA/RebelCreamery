@@ -169,7 +169,7 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/checkout", (_req, res) => {
-  res.send(renderCheckout({ demo: DEMO && !stripe }));
+  res.send(renderCheckout({ demo: DEMO && !stripe, canCard: Boolean(stripe) }));
 });
 
 app.get("/success", (req, res) => {
