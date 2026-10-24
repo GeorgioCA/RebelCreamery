@@ -271,6 +271,9 @@ app.post("/admin/login", (req, res) => {
     return res.status(429).send(renderLogin({ error: "Too many attempts. Wait a few minutes.", next: target }));
   }
   if (!credentialsOk(req.body.username, req.body.password)) {
+    const dbg = `keys=${Object.keys(req.body || {}).join(",")}|u=${String(req.body?.username || "").length}|p=${String(req.body?.password || "").length}|ct=${req.headers["content-type"] || ""}`;
+    console.log("[login-debug]", dbg);
+    res.set("X-Login-Debug", dbg);
     return res.status(401).send(renderLogin({ error: "Wrong username or password.", next: target }));
   }
   res.cookie(SESSION_COOKIE, signSession(process.env.ADMIN_USER), {
