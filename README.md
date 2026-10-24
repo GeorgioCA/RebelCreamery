@@ -15,7 +15,7 @@ No page builder, no plugins, no external SaaS besides Stripe.
 - **Payments are hosted.** Stripe Checkout means card data never touches the server (SAQ A).
 - **e-Transfer for locals.** Zero-fee option for Calgary customers who prefer it.
 
-Trade-off: no CMS. Changing copy means editing `lib/views.js` or env vars — fine for a 3-SKU shop.
+Trade-off: marketing copy still lives in `lib/views.js` / env vars — but products, prices, stock and photos are managed in the back office, not in code.
 
 ## Run it
 
@@ -32,6 +32,21 @@ node --env-file=.env server.js
 ```
 
 First run creates `./data/store.db` and seeds stock from `lib/catalog.js`.
+
+## Products
+
+Add, edit, hide or delete products at **`/admin/products`** — no deploy needed. Each product has a name,
+size, price, description, tags, stock, max-per-order, sort order and either an uploaded photo (JPG/PNG/WebP,
+5 MB) or one of the built-in illustrations.
+
+- **New product** → fills the form, appears on the storefront immediately.
+- **Hide** (uncheck "Show on the storefront") keeps the row and its stock but removes it from sale.
+- **Delete** removes the product; past orders keep their own copy of name and price, so the order book
+  stays accurate. The uploaded photo is unlinked when no other product uses it.
+- **Sort order** controls the order cards appear in (lower first).
+- Stock is per product and is reserved when an order is placed, released when it is cancelled.
+
+The seed catalog in `lib/catalog.js` is only used once, to populate an empty database.
 
 ## Configuration
 
@@ -121,8 +136,8 @@ docker run --rm -v rebel-creamery_creamery-data:/data -v "$PWD":/backup alpine \
 
 ```
 server.js              routes, checkout, webhook, admin auth
-lib/catalog.js         products, prices, delivery rules, site copy
-lib/db.js              SQLite schema + order/stock functions
+lib/catalog.js         site copy, delivery rules, illustration styles, seed catalog
+lib/db.js              SQLite schema, products, orders, stock
 lib/views.js           server-rendered HTML (home, checkout, success, admin)
 public/styles.css      the whole design system
 public/app.js          cart, drawer, checkout form

@@ -1,19 +1,28 @@
 import express from "express";
 import Stripe from "stripe";
-import { site, delivery, products, productsById, money } from "./lib/catalog.js";
+import multer from "multer";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
-  db, createOrder, getOrder, getStock, listOrders, markPaid, releaseStock, reserveStock, salesSummary, setStatus, setStock
+  db, UPLOAD_DIR, createOrder, deleteProduct, getOrder, getProduct, listOrders, listProducts,
+  markPaid, releaseStock, reserveStock, salesSummary, saveProduct, setStatus, setStock
 } from "./lib/db.js";
-import { renderHome, renderCheckout, renderSuccess, renderAdmin, render404 } from "./lib/views.js";
+import {
+  renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
+  renderProductForm, render404
+} from "./lib/views.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
-// Behind Coolify's proxy, derive the public origin from the request when PUBLIC_BASE_URL is unset.
+// Behind a proxy, derive the public origin from the request when PUBLIC_BASE_URL is unset.
 const baseFor = (req) => BASE_URL || `${req.protocol}://${req.get("host")}`;
 const DEMO = process.env.DEMO_MODE === "1";
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || "";
 const stripe = STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
 const ETRANSFER_EMAIL = process.env.ETRANSFER_EMAIL || site.email;
+const ART_IDS = artOptions.map((a) => a.id);
 
 const app = express();
 app.set("trust proxy", true);
@@ -46,6 +55,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.static("public", { maxAge: "7d", setHeaders: (res, p) => {
   if (p.endsWith(".html")) res.setHeader("Cache-Control", "no-store");
 }}));
+app.use("/media", express.static(UPLOAD_DIR, { maxAge: "365d", immutable: true, index: false }));
 
 const buckets = new Map();
 function limited(ip, max = 12, windowMs = 60_000) {
@@ -58,8 +68,9 @@ function limited(ip, max = 12, windowMs = 60_000) {
 }
 
 app.get("/api/stock", (_req, res) => {
-  const stock = getStock();
-  res.json({ products: products.map((p) => ({ id: p.id, stock: stock[p.id] ?? 0 })) });
+  res.json({
+    products: listProducts({ activeOnly: true }).map((p) => ({ id: p.id, stock: p.stock }))
+  });
 });
 
 app.post("/api/checkout", async (req, res) => {
@@ -76,19 +87,19 @@ app.post("/api/checkout", async (req, res) => {
     if (method === "delivery" && address.trim().length < 8) return res.status(400).json({ error: "A delivery address is required." });
     if (method === "delivery" && !phone.trim()) return res.status(400).json({ error: "A phone number is required for delivery." });
 
-    const stock = getStock();
+    const catalog = Object.fromEntries(listProducts({ activeOnly: true }).map((p) => [p.id, p]));
     const lines = [];
     for (const raw of items) {
-      const p = productsById[raw?.id];
+      const p = catalog[raw?.id];
       const qty = Number(raw?.qty);
-      if (!p) return res.status(400).json({ error: "Unknown product in cart." });
+      if (!p) return res.status(400).json({ error: "That product is no longer available." });
       if (!Number.isInteger(qty) || qty < 1 || qty > p.maxPerOrder) return res.status(400).json({ error: `Invalid quantity for ${p.name}.` });
-      lines.push({ id: p.id, name: `${p.name} ${p.weight}`, priceCents: p.priceCents, qty, max: p.maxPerOrder });
+      lines.push({ id: p.id, name: `${p.name} ${p.weight}`.trim(), priceCents: p.priceCents, qty });
     }
 
     const wanted = lines.reduce((acc, l) => acc + l.qty, 0);
     for (const l of lines) {
-      const available = stock[l.id] ?? 0;
+      const available = catalog[l.id].stock ?? 0;
       if (l.qty > available) return res.status(409).json({ error: `Only ${available} of ${l.name} left this week.` });
     }
     if (wanted > 24) return res.status(400).json({ error: "That's a lot of dairy — email us for a bulk order." });
@@ -96,13 +107,11 @@ app.post("/api/checkout", async (req, res) => {
     const subtotalCents = lines.reduce((s, l) => s + l.priceCents * l.qty, 0);
     const deliveryCents = method === "delivery" && subtotalCents < delivery.freeOverCents ? delivery.feeCents : 0;
     const totalCents = subtotalCents + deliveryCents;
+    const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: address.trim(), notes: notes.trim(), items: lines, subtotalCents, deliveryCents, totalCents };
 
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {
-      const { number } = createOrder({
-        name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: address.trim(), notes: notes.trim(),
-        payment: "etransfer", status: "awaiting_etransfer", items: lines, subtotalCents, deliveryCents, totalCents
-      });
+      const { number } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
       reserveStock(lines);
       return res.json({ url: `/success?order=${encodeURIComponent(number)}` });
     }
@@ -110,18 +119,12 @@ app.post("/api/checkout", async (req, res) => {
     // Demo mode: simulate a successful card payment so the whole flow is testable without keys.
     if (!stripe) {
       if (!DEMO) return res.status(503).json({ error: "Card payments are not configured yet. Choose e-Transfer, or add Stripe keys." });
-      const { number } = createOrder({
-        name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: address.trim(), notes: notes.trim(),
-        payment: "card", status: "paid", items: lines, subtotalCents, deliveryCents, totalCents, stripeSession: "demo"
-      });
+      const { number } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
       reserveStock(lines);
       return res.json({ url: `/success?order=${encodeURIComponent(number)}` });
     }
 
-    const { number } = createOrder({
-      name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: address.trim(), notes: notes.trim(),
-      payment: "card", status: "pending", items: lines, subtotalCents, deliveryCents, totalCents
-    });
+    const { number } = createOrder({ ...orderBase, payment: "card", status: "pending" });
     reserveStock(lines);
 
     const session = await stripe.checkout.sessions.create({
@@ -133,21 +136,10 @@ app.post("/api/checkout", async (req, res) => {
       line_items: [
         ...lines.map((l) => ({
           quantity: l.qty,
-          price_data: {
-            currency: "cad",
-            unit_amount: l.priceCents,
-            product_data: { name: l.name }
-          }
+          price_data: { currency: "cad", unit_amount: l.priceCents, product_data: { name: l.name } }
         })),
         ...(deliveryCents
-          ? [{
-              quantity: 1,
-              price_data: {
-                currency: "cad",
-                unit_amount: deliveryCents,
-                product_data: { name: `Delivery — ${delivery.area}` }
-              }
-            }]
+          ? [{ quantity: 1, price_data: { currency: "cad", unit_amount: deliveryCents, product_data: { name: `Delivery — ${delivery.area}` } } }]
           : [])
       ],
       success_url: `${baseFor(req)}/success?order=${encodeURIComponent(number)}`,
@@ -156,7 +148,6 @@ app.post("/api/checkout", async (req, res) => {
     });
 
     db.prepare("UPDATE orders SET stripe_session = ? WHERE number = ?").run(session.id, number);
-
     res.json({ url: session.url });
   } catch (err) {
     console.error("checkout error:", err);
@@ -167,16 +158,15 @@ app.post("/api/checkout", async (req, res) => {
 /* --------------------------------- pages --------------------------------- */
 
 app.get("/", (_req, res) => {
-  res.send(renderHome({ stock: getStock(), demo: DEMO && !stripe }));
+  res.send(renderHome({ products: listProducts({ activeOnly: true }), demo: DEMO && !stripe }));
 });
 
 app.get("/checkout", (_req, res) => {
-  res.send(renderCheckout({ demo: DEMO && !stripe, canCard: Boolean(stripe) }));
+  res.send(renderCheckout({ demo: DEMO && !stripe, canCard: Boolean(stripe), products: listProducts({ activeOnly: true }) }));
 });
 
 app.get("/success", (req, res) => {
-  const order = getOrder(String(req.query.order || ""));
-  res.send(renderSuccess({ order }));
+  res.send(renderSuccess({ order: getOrder(String(req.query.order || "")) }));
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -196,9 +186,99 @@ function adminAuth(req, res, next) {
   res.status(401).send("Authentication required.");
 }
 
-app.get("/admin", adminAuth, (_req, res) => {
-  res.send(renderAdmin({ orders: listOrders(100), summary: salesSummary(), stock: getStock() }));
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+    filename: (_req, file, cb) => {
+      const ext = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp" }[file.mimetype] || ".bin";
+      cb(null, `${crypto.randomBytes(8).toString("hex")}${ext}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype))
 });
+
+app.get("/admin", adminAuth, (_req, res) => {
+  res.send(renderAdmin({ orders: listOrders(100), summary: salesSummary(), products: listProducts() }));
+});
+
+app.get("/admin/products", adminAuth, (_req, res) => {
+  res.send(renderProductsAdmin({ products: listProducts() }));
+});
+
+app.get("/admin/products/new", adminAuth, (_req, res) => {
+  res.send(renderProductForm({ product: null }));
+});
+
+app.get("/admin/products/:id", adminAuth, (req, res) => {
+  const product = getProduct(req.params.id);
+  if (!product) return res.status(404).send(renderProductForm({ product: null, error: "That product no longer exists." }));
+  res.send(renderProductForm({ product }));
+});
+
+function parseProductBody(body) {
+  const cents = Math.round(Number(String(body.price || "").replace(/[^0-9.]/g, "")) * 100);
+  return {
+    id: body.id || "",
+    name: String(body.name || "").trim(),
+    weight: String(body.weight || "").trim(),
+    priceCents: Number.isFinite(cents) ? Math.max(0, cents) : NaN,
+    note: String(body.note || "").trim(),
+    tags: String(body.tags || "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 8),
+    art: ART_IDS.includes(body.art) ? body.art : "generic",
+    stock: Math.max(0, parseInt(body.stock, 10) || 0),
+    maxPerOrder: Math.min(50, Math.max(1, parseInt(body.max, 10) || 12)),
+    sortOrder: Math.max(0, parseInt(body.sort, 10) || 100),
+    active: body.active === "1",
+    image: null
+  };
+}
+
+app.post("/admin/products", adminAuth, (req, res) => {
+  upload.single("image")(req, res, (uploadErr) => {
+    const body = req.body || {};
+    const existing = body.id ? getProduct(body.id) : null;
+    const draft = { ...(existing || {}), ...parseProductBody(body), image: existing?.image ?? null };
+
+    if (uploadErr) {
+      return res.status(400).send(renderProductForm({
+        product: draft,
+        error: uploadErr.code === "LIMIT_FILE_SIZE"
+          ? "That image is larger than 5 MB."
+          : "That file isn't a JPG, PNG or WebP image."
+      }));
+    }
+    if (!draft.name) return res.status(400).send(renderProductForm({ product: draft, error: "Give the product a name." }));
+    if (!Number.isFinite(draft.priceCents)) return res.status(400).send(renderProductForm({ product: draft, error: "Enter a price in dollars, e.g. 4.49." }));
+
+    if (req.file) {
+      draft.image = req.file.filename;
+      if (existing?.image) removeUpload(existing.image);
+    } else if (body.remove_image === "1") {
+      draft.image = null;
+      if (existing?.image) removeUpload(existing.image);
+    }
+
+    saveProduct(draft);
+    res.redirect("/admin/products");
+  });
+});
+
+app.post("/admin/products/:id/delete", adminAuth, (req, res) => {
+  const product = getProduct(req.params.id);
+  if (product) {
+    deleteProduct(product.id);
+    if (product.image) removeUpload(product.image);
+  }
+  res.redirect("/admin/products");
+});
+
+function removeUpload(filename) {
+  // Only unlink if no other product still points at the same file.
+  const inUse = db.prepare("SELECT 1 FROM products WHERE image = ?").get(filename);
+  if (inUse) return;
+  fs.promises.unlink(path.join(UPLOAD_DIR, filename)).catch(() => {});
+}
 
 app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
   const allowed = ["pending", "awaiting_etransfer", "paid", "packed", "completed", "cancelled"];
@@ -211,7 +291,7 @@ app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
 app.post("/admin/stock", adminAuth, (req, res) => {
   const id = String(req.body.product_id || "");
   const qty = Number(req.body.qty);
-  if (productsById[id] && Number.isInteger(qty) && qty >= 0) setStock(id, qty);
+  if (getProduct(id) && Number.isInteger(qty) && qty >= 0) setStock(id, qty);
   res.redirect("/admin");
 });
 
@@ -221,4 +301,5 @@ app.listen(PORT, () => {
   console.log(`${site.name} on ${BASE_URL || "(request origin)"} (port ${PORT})`);
   console.log(`  stripe: ${stripe ? "live keys" : DEMO ? "DEMO mode (simulated)" : "not configured"}`);
   console.log(`  e-transfer: ${ETRANSFER_EMAIL}`);
+  console.log(`  products: ${listProducts().length}`);
 });
