@@ -299,9 +299,18 @@ app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
 
 app.post("/admin/stock", adminAuth, (req, res) => {
   const id = String(req.body.product_id || "");
-  const qty = Number(req.body.qty);
-  if (getProduct(id) && Number.isInteger(qty) && qty >= 0) setStock(id, qty);
-  res.redirect("/admin");
+  const product = getProduct(id);
+  if (product) {
+    const delta = Number(req.body.delta);
+    if (Number.isInteger(delta) && delta !== 0) {
+      setStock(id, Math.max(0, product.stock + delta));       // relative: +1 / −1 buttons
+    } else {
+      const qty = Number(req.body.qty);
+      if (Number.isInteger(qty) && qty >= 0) setStock(id, qty); // absolute: product form
+    }
+  }
+  const back = String(req.body.back || "");
+  res.redirect(back.startsWith("/admin") ? back : "/admin");
 });
 
 /* --------------------------------- labels -------------------------------- */
