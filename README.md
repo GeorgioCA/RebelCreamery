@@ -75,7 +75,18 @@ retail labelling if you move into grocery.
 
 ## Configuration
 
-Everything lives in `.env`:
+### Order email
+
+Customers get a confirmation with their order link when they check out, and a short note when you change the status to paid, packed, completed or cancelled. Sending goes through [Resend](https://resend.com) — one API call, no extra dependency.
+
+```
+RESEND_API_KEY=re_...
+EMAIL_FROM=Rebel Creamery <orders@rebelcreamery.ca>
+```
+
+`EMAIL_FROM` must be on a domain verified in Resend (add the domain in their dashboard, then copy the DKIM/SPF records into Cloudflare DNS). Until it is verified, the fallback `onboarding@resend.dev` only delivers to the Resend account owner — customer addresses will be rejected by the API.
+
+Everything else lives in `.env`:
 
 | Variable | What it does |
 |---|---|
