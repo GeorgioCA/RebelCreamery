@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, createOrder, deleteProduct, enqueuePrint, finishPrintJob,
-  getOrder, getProduct, listOrders, listProducts, markPaid, printQueueSummary, releaseStock,
+  getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary, releaseStock,
   reserveStock, salesSummary, saveProduct, setStatus, setStock
 } from "./lib/db.js";
 import {
@@ -114,20 +114,20 @@ app.post("/api/checkout", async (req, res) => {
 
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {
-      const { number } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
+      const { token } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
       reserveStock(lines);
-      return res.json({ url: `/success?order=${encodeURIComponent(number)}` });
+      return res.json({ url: `/order/${token}` });
     }
 
     // Demo mode: simulate a successful card payment so the whole flow is testable without keys.
     if (!stripe) {
       if (!DEMO) return res.status(503).json({ error: "Card payments are not configured yet. Choose e-Transfer, or add Stripe keys." });
-      const { number } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
+      const { token } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
       reserveStock(lines);
-      return res.json({ url: `/success?order=${encodeURIComponent(number)}` });
+      return res.json({ url: `/order/${token}` });
     }
 
-    const { number } = createOrder({ ...orderBase, payment: "card", status: "pending" });
+    const { number, token } = createOrder({ ...orderBase, payment: "card", status: "pending" });
     reserveStock(lines);
 
     const session = await stripe.checkout.sessions.create({
@@ -145,7 +145,7 @@ app.post("/api/checkout", async (req, res) => {
           ? [{ quantity: 1, price_data: { currency: "cad", unit_amount: deliveryCents, product_data: { name: `Delivery — ${delivery.area}` } } }]
           : [])
       ],
-      success_url: `${baseFor(req)}/success?order=${encodeURIComponent(number)}`,
+      success_url: `${baseFor(req)}/order/${token}`,
       cancel_url: `${baseFor(req)}/checkout?canceled=1`,
       payment_intent_data: { metadata: { order_number: number } }
     });
@@ -168,8 +168,13 @@ app.get("/checkout", (_req, res) => {
   res.send(renderCheckout({ demo: DEMO && !stripe, canCard: Boolean(stripe), products: listProducts({ activeOnly: true }) }));
 });
 
-app.get("/success", (req, res) => {
-  res.send(renderSuccess({ order: getOrder(String(req.query.order || "")) }));
+app.get("/order/:token", (req, res) => {
+  res.send(renderSuccess({ order: getOrderByToken(req.params.token), origin: baseFor(req) }));
+});
+
+// Staff lookup by order number. Public success links use /order/:token instead.
+app.get("/success", adminAuth, (req, res) => {
+  res.send(renderSuccess({ order: getOrder(String(req.query.order || "")), origin: baseFor(req) }));
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
