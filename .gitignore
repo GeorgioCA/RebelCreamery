@@ -3,3 +3,9 @@ data/
 .env
 screenshots/
 *.log
+
+# python
+__pycache__/
+*.pyc
+labels/
+spool/
