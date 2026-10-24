@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "3000"
+      DATA_DIR: /data
+    volumes:
+      - creamery-data:/data
+    ports:
+      - "3000:3000"
+
+volumes:
+  creamery-data:

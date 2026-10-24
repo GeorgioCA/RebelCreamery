@@ -1,0 +1,116 @@
+# Rebel Creamery — storefront
+
+Self-hosted storefront for a small dairy: product cards, cart, Stripe Checkout, Interac e-Transfer,
+and a password-protected order book. One Node process, one SQLite file, one Docker container.
+
+No page builder, no plugins, no external SaaS besides Stripe.
+
+## Why this instead of WooCommerce
+
+- **One container, no plugin surface.** WooCommerce means WordPress + PHP + a payment plugin + update
+  churn on four moving parts. This is ~900 lines you can read in an afternoon.
+- **Design is not constrained by a theme.** Every pixel is in `public/styles.css`.
+- **The catalog matches the cost model.** Prices and pack sizes in `lib/catalog.js` are the same numbers
+  used in `Business/Dairy Shop/The Numbers`.
+- **Payments are hosted.** Stripe Checkout means card data never touches the server (SAQ A).
+- **e-Transfer for locals.** Zero-fee option for Calgary customers who prefer it.
+
+Trade-off: no CMS. Changing copy means editing `lib/views.js` or env vars — fine for a 3-SKU shop.
+
+## Run it
+
+```sh
+cp .env.example .env         # edit the values
+docker compose up -d --build # http://localhost:3000
+```
+
+Without Docker:
+
+```sh
+npm install
+node --env-file=.env server.js
+```
+
+First run creates `./data/store.db` and seeds stock from `lib/catalog.js`.
+
+## Configuration
+
+Everything lives in `.env`:
+
+| Variable | What it does |
+|---|---|
+| `SITE_NAME`, `SITE_TAGLINE` | Wordmark and meta description |
+| `PICKUP_LOCATION`, `PICKUP_WINDOW`, `CUTOFF_TEXT` | Pickup copy across the site |
+| `DELIVERY_FEE_CENTS`, `FREE_DELIVERY_THRESHOLD_CENTS` | Delivery pricing (cents) |
+| `ETRANSFER_EMAIL` | Where Interac e-Transfers land |
+| `STRIPE_SECRET_KEY` | `sk_live_…` or `sk_test_…` — enables real card checkout |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_…` from the webhook endpoint |
+| `DEMO_MODE=1` | Simulates card payments when no Stripe key is set (for testing) |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | HTTP Basic auth for `/admin` |
+| `PUBLIC_BASE_URL` | Public origin, used for Stripe redirect URLs |
+
+Products, prices and stock live in `lib/catalog.js`. Stock is also editable from the order book.
+
+## Payments
+
+### Stripe
+
+1. Create the account, grab the secret key, set `STRIPE_SECRET_KEY`.
+2. Add a webhook endpoint: `https://your-domain/api/stripe/webhook`, event
+   `checkout.session.completed`. Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+3. Set `DEMO_MODE=0` and redeploy.
+
+Card data never reaches this app. The webhook is what marks an order paid — without it, orders sit in
+`pending`. Test with `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+
+### Interac e-Transfer
+
+No integration needed: the order is recorded as `awaiting_etransfer` with the order number as the
+message, the customer is shown the amount and your `ETRANSFER_EMAIL`, and you mark it `paid` in
+`/admin` when it lands. Auto-deposit on your bank account means no security question.
+
+## Order lifecycle
+
+`pending` (card, awaiting Stripe) → `paid` → `packed` → `completed`
+`awaiting_etransfer` (e-Transfer) → `paid` …
+`cancelled` returns the reserved stock to the cooler.
+
+Stock is reserved when the order is placed, not when it is paid — otherwise two people can buy the last
+halloumi while one is still paying.
+
+## Deploy on Coolify
+
+- New resource → Docker Compose → point at this repo (or paste `docker-compose.yml`).
+- Add the env vars from `.env.example` in the Coolify UI. Set `PUBLIC_BASE_URL` to the real domain.
+- Mount a persistent volume at `/data` — that is the SQLite file and therefore the order book.
+- Set the domain on the `web` service, then deploy. Coolify's proxy terminates TLS.
+
+If the repo is private, use a deploy key. The image builds with `node:22-alpine`; nothing else is needed.
+
+## Backups
+
+The entire business state is `/data/store.db` (plus `-wal`/`-shm`). Copy it nightly:
+
+```sh
+docker run --rm -v rebel-creamery_creamery-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/creamery-$(date +%F).tgz -C /data .
+```
+
+## Files
+
+```
+server.js              routes, checkout, webhook, admin auth
+lib/catalog.js         products, prices, delivery rules, site copy
+lib/db.js              SQLite schema + order/stock functions
+lib/views.js           server-rendered HTML (home, checkout, success, admin)
+public/styles.css      the whole design system
+public/app.js          cart, drawer, checkout form
+public/fonts/          Fraunces + Inter, self-hosted (no Google request at runtime)
+```
+
+## Known gaps
+
+- No transactional email — the confirmation is the success page. Add Resend/Postmark if wanted.
+- No pickup-time slotting; one window for everyone.
+- Single admin user; no audit log.
+- SQLite is fine to a few thousand orders; move to Postgres beyond that.

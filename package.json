@@ -1,0 +1,16 @@
+{
+  "name": "rebel-creamery",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Small-batch dairy storefront — self-hosted, Stripe Checkout + Interac e-Transfer",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "stripe": "^17.5.0"
+  }
+}
