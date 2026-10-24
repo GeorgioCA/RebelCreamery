@@ -120,9 +120,10 @@ ul,ol,dl{margin:0;padding:0}
 /* --------------------------------- ticker -------------------------------- */
 
 .ticker{border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;background:rgba(243,234,216,.5)}
-.ticker-track{display:flex;gap:34px;white-space:nowrap;padding:15px 0;animation:slide 46s linear infinite;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+.ticker-track{display:flex;gap:34px;white-space:nowrap;padding:15px 0;animation:slide 92s linear infinite;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
 .ticker-track .dot{color:var(--clay)}
 @keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.ticker-track{animation:none;white-space:normal;flex-wrap:wrap;justify-content:center;gap:10px 24px}.ticker-track .dot{display:none}}
 
 /* ---------------------------------- shop --------------------------------- */
 
