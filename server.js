@@ -141,7 +141,7 @@ app.post("/api/checkout", async (req, res) => {
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      locale: "en-CA",
+      locale: "auto", // Stripe has no en-CA; auto follows the browser and falls back to English
       customer_email: email.trim(),
       client_reference_id: number,
       metadata: { order_number: number },
