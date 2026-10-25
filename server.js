@@ -46,8 +46,10 @@ app.post(
       console.error("webhook signature failed:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-    if (event.type === "checkout.session.completed") {
-      const order = markPaid(event.data.object.id);
+    const session = event.data.object;
+    const paidEvent = event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded";
+    if (paidEvent && session?.payment_status === "paid") {
+      const order = markPaid(session.id);
       if (order) {
         console.log(`paid: ${order.number}`);
         sendOrderConfirmation(order, `${baseFor(req)}/order/${order.token}`);
