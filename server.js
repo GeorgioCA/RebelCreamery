@@ -79,10 +79,124 @@ function limited(ip, max = 12, windowMs = 60_000) {
   return b.count > max;
 }
 
+
+/* ------------------------------ addresses -------------------------------- */
+// Photon (OpenStreetMap) for street suggestions, Zippopotam for postal lookups.
+// Both are free and keyless; results cached in memory so a busy checkout doesn't
+// hammer them. Canada Post AddressComplete is the paid upgrade (account + key).
+
+const PROVINCE_BY_NAME = {
+  "Alberta": "AB", "British Columbia": "BC", "Saskatchewan": "SK", "Manitoba": "MB",
+  "Ontario": "ON", "Quebec": "QC", "New Brunswick": "NB", "Nova Scotia": "NS",
+  "Prince Edward Island": "PE", "Newfoundland and Labrador": "NL", "Yukon": "YT",
+  "Northwest Territories": "NT", "Nunavut": "NU"
+};
+const PROVINCE_CODES = new Set(Object.values(PROVINCE_BY_NAME));
+
+function normPostal(value) {
+  const s = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return s.length === 6 ? `${s.slice(0, 3)} ${s.slice(3)}` : String(value || "").toUpperCase().trim();
+}
+const postalOk = (p) => /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z] \d[ABCEGHJ-NPRSTV-Z]\d$/.test(p);
+
+const lookupCache = new Map();
+function cached(key, ttlMs, load) {
+  const hit = lookupCache.get(key);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+  const value = load();
+  lookupCache.set(key, { at: Date.now(), value });
+  if (lookupCache.size > 500) lookupCache.delete(lookupCache.keys().next().value);
+  return value;
+}
+
 app.get("/api/stock", (_req, res) => {
   res.json({
     products: listProducts({ activeOnly: true }).map((p) => ({ id: p.id, stock: p.stock }))
   });
+});
+
+app.get("/api/postal/:code", async (req, res) => {
+  const postal = normPostal(req.params.code);
+  const fsa = postal.slice(0, 3);
+  if (!/^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]$/.test(fsa)) return res.json({ ok: false });
+  if (limited(`postal:${req.ip}`, 200, 60 * 60_000)) return res.status(429).json({ ok: false });
+  const out = await cached(`pc:${fsa}`, 24 * 60 * 60_000, async () => {
+    try {
+      const r = await fetch(`https://api.zippopotam.us/CA/${fsa}`, { signal: AbortSignal.timeout(4000) });
+      if (!r.ok) return { ok: false };
+      const d = await r.json();
+      const place = d.places?.[0];
+      if (!place) return { ok: false };
+      return {
+        ok: true,
+        city: String(place["place name"] || "").replace(/\s*\(.*\)$/, "").trim(),
+        province: PROVINCE_BY_NAME[place.state] || "",
+        postal
+      };
+    } catch { return { ok: false }; }
+  });
+  res.json(out);
+});
+
+app.get("/api/address", async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (q.length < 4) return res.json({ results: [] });
+  if (limited(`addr:${req.ip}`, 300, 60 * 60_000)) return res.json({ results: [] });
+  const results = await cached(`q:${q.toLowerCase()}`, 6 * 60 * 60_000, async () => {
+    try {
+      const url = new URL("https://photon.komoot.io/api/");
+      url.searchParams.set("q", q);
+      url.searchParams.set("limit", "6");
+      url.searchParams.set("lang", "en");
+      url.searchParams.set("lat", "51.0447");   // bias to Calgary
+      url.searchParams.set("lon", "-114.0719");
+      const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (!r.ok) return [];
+      const d = await r.json();
+      return (d.features || [])
+        .filter((f) => f.properties?.countrycode === "CA")
+        .map((f) => {
+          const x = f.properties;
+          const [lon, lat] = f.geometry?.coordinates || [];
+          const street = [x.housenumber, x.street].filter(Boolean).join(" ");
+          const city = x.city || x.town || x.village || x.locality || "";
+          // distance from downtown Calgary, so the nearest match wins the list
+          const dist = (lat && lon)
+            ? Math.hypot((lat - 51.0447) * 111, (lon + 114.0719) * 111 * Math.cos((51.0447 * Math.PI) / 180))
+            : 99;
+          return {
+            label: `${street || x.name}, ${city}${x.postcode ? " " + x.postcode : ""}`.replace(/,\s*$/, ""),
+            street,
+            city,
+            province: PROVINCE_BY_NAME[x.state] || "",
+            postal: x.postcode || "",
+            dist
+          };
+        })
+        .filter((r) => r.street && r.postal)
+        // One row per street+city, with the most common postal code: OSM often
+        // repeats the same address with a bad postcode on one POI.
+        .reduce((acc, r) => {
+          const key = `${r.street}|${r.city}`;
+          const hit = acc.find((o) => o.key === key);
+          if (!hit) acc.push({ key, ...r, votes: new Map([[r.postal, 1]]) });
+          else {
+            hit.votes.set(r.postal, (hit.votes.get(r.postal) || 0) + 1);
+            hit.dist = Math.min(hit.dist, r.dist);
+          }
+          return acc;
+        }, [])
+        .map(({ key, votes, dist, ...r }) => ({
+          ...r,
+          postal: [...votes.entries()].sort((a, b) => b[1] - a[1])[0][0],
+          dist
+        }))
+        .map((r) => ({ ...r, label: `${r.street}, ${r.city} ${r.postal}`.trim() }))
+        .sort((a, b) => a.dist - b.dist)
+        .map(({ dist, ...r }) => r);
+    } catch { return []; }
+  });
+  res.json({ results });
 });
 
 app.post("/api/checkout", async (req, res) => {
@@ -90,14 +204,30 @@ app.post("/api/checkout", async (req, res) => {
   try {
     if (limited(req.ip)) return res.status(429).json({ error: "Too many attempts. Try again in a minute." });
 
-    const { items = [], name = "", email = "", phone = "", method = "pickup", address = "", notes = "", payment = "card" } = req.body || {};
+    const { items = [], name = "", email = "", phone = "", method = "pickup", address = "", unit = "", street = "", city = "", province = "", postal = "", notes = "", payment = "card" } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Your cart is empty." });
     if (!name.trim() || name.trim().length < 2) return res.status(400).json({ error: "Please enter your name." });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: "Please enter a valid email." });
     if (!["pickup", "delivery"].includes(method)) return res.status(400).json({ error: "Choose pickup or delivery." });
     if (!["card", "etransfer"].includes(payment)) return res.status(400).json({ error: "Choose a payment method." });
-    if (method === "delivery" && address.trim().length < 8) return res.status(400).json({ error: "A delivery address is required." });
+    // Delivery address: structured parts when the form sends them, plain string otherwise.
+    let deliveryAddress = String(address || "").trim();
+    if (method === "delivery") {
+      const st = String(street || "").trim();
+      if (st || city || postal) {
+        const ct = String(city || "").trim() || "Calgary";
+        const pv = String(province || "AB").toUpperCase();
+        const pc = normPostal(postal);
+        if (st.length < 3) return res.status(400).json({ error: "Enter the street address." });
+        if (!PROVINCE_CODES.has(pv)) return res.status(400).json({ error: "Choose a province." });
+        if (!postalOk(pc)) return res.status(400).json({ error: "Enter a postal code like T2R 1B1." });
+        const unitTxt = String(unit || "").trim();
+        deliveryAddress = `${st}${unitTxt ? `, Unit ${unitTxt}` : ""}, ${ct}, ${pv} ${pc}`;
+      } else if (deliveryAddress.length < 8) {
+        return res.status(400).json({ error: "A delivery address is required." });
+      }
+    }
     if (method === "delivery" && !phone.trim()) return res.status(400).json({ error: "A phone number is required for delivery." });
 
     const catalog = Object.fromEntries(listProducts({ activeOnly: true }).map((p) => [p.id, p]));
@@ -124,7 +254,7 @@ app.post("/api/checkout", async (req, res) => {
     const subtotalCents = lines.reduce((s, l) => s + l.priceCents * l.qty, 0);
     const deliveryCents = method === "delivery" && subtotalCents < delivery.freeOverCents ? delivery.feeCents : 0;
     const totalCents = subtotalCents + deliveryCents;
-    const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: address.trim(), notes: notes.trim(), items: lines, subtotalCents, deliveryCents, totalCents };
+    const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: deliveryAddress, notes: notes.trim(), items: lines, subtotalCents, deliveryCents, totalCents };
 
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {

@@ -194,6 +194,88 @@
     document.addEventListener("cart:change", paint);
     paint();
 
+    /* ------------------------ delivery address parts ----------------------- */
+    const streetEl = form.querySelector('[name="street"]');
+    const cityEl = form.querySelector('[name="city"]');
+    const provEl = form.querySelector('[name="province"]');
+    const postalEl = form.querySelector('[name="postal"]');
+    const unitEl = form.querySelector('[name="unit"]');
+    const sugEl = document.getElementById("addr-suggest");
+
+    let sugTimer, sugItems = [], sugIndex = -1, lastQuery = "";
+
+    const hideSuggest = () => { sugEl.hidden = true; sugEl.innerHTML = ""; sugItems = []; sugIndex = -1; };
+    const paintActive = () => [...sugEl.children].forEach((li, i) => li.classList.toggle("active", i === sugIndex));
+
+    function showSuggest(list) {
+      sugItems = list; sugIndex = -1;
+      if (!list.length) return hideSuggest();
+      sugEl.innerHTML = list.map((r, i) => `<li role="option" data-i="${i}">${r.label}</li>`).join("");
+      sugEl.hidden = false;
+    }
+
+    function choose(i) {
+      const r = sugItems[i];
+      if (!r) return;
+      streetEl.value = r.street || "";
+      if (r.city) cityEl.value = r.city;
+      if (r.province) provEl.value = r.province;
+      if (r.postal) postalEl.value = r.postal;
+      hideSuggest();
+      (unitEl.value ? postalEl : unitEl).focus();
+    }
+
+    if (streetEl && sugEl) {
+      streetEl.addEventListener("input", () => {
+        const q = streetEl.value.trim();
+        clearTimeout(sugTimer);
+        if (q.length < 4) return hideSuggest();
+        if (q === lastQuery) return;
+        sugTimer = setTimeout(async () => {
+          lastQuery = q;
+          try {
+            const r = await fetch(`/api/address?q=${encodeURIComponent(q)}`);
+            const d = await r.json();
+            if (streetEl.value.trim() !== q) return;
+            showSuggest(d.results || []);
+          } catch { hideSuggest(); }
+        }, 250);
+      });
+
+      streetEl.addEventListener("keydown", (e) => {
+        if (sugEl.hidden) return;
+        if (e.key === "ArrowDown") { e.preventDefault(); sugIndex = Math.min(sugIndex + 1, sugItems.length - 1); paintActive(); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); sugIndex = Math.max(sugIndex - 1, 0); paintActive(); }
+        else if (e.key === "Enter" && sugIndex >= 0) { e.preventDefault(); choose(sugIndex); }
+        else if (e.key === "Escape") hideSuggest();
+      });
+
+      sugEl.addEventListener("click", (e) => {
+        const li = e.target.closest("li[data-i]");
+        if (li) choose(Number(li.dataset.i));
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".addr-wrap")) hideSuggest();
+      });
+    }
+
+    if (postalEl) {
+      postalEl.addEventListener("blur", async () => {
+        const raw = postalEl.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        if (raw.length !== 6) return;
+        postalEl.value = `${raw.slice(0, 3)} ${raw.slice(3)}`;
+        try {
+          const r = await fetch(`/api/postal/${raw.slice(0, 3)}`);
+          const d = await r.json();
+          if (d.ok) {
+            if (d.city) cityEl.value = d.city;
+            if (d.province) provEl.value = d.province;
+          }
+        } catch {}
+      });
+    }
+
     const params = new URLSearchParams(location.search);
     if (params.get("canceled")) {
       errorEl.hidden = false;
@@ -221,7 +303,11 @@
             email: data.get("email"),
             phone: data.get("phone"),
             method: data.get("method"),
-            address: data.get("address"),
+            unit: data.get("unit"),
+            street: data.get("street"),
+            city: data.get("city"),
+            province: data.get("province"),
+            postal: data.get("postal"),
             notes: data.get("notes"),
             payment: data.get("payment")
           })
