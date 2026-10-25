@@ -75,6 +75,12 @@ retail labelling if you move into grocery.
 
 ## Configuration
 
+### Made to order vs counted stock
+
+`MADE_TO_ORDER=1` (default) means stock never blocks an order — everything is made after it's placed. The per-product **sold-out** switch in the back office is the only thing that stops sales, and stock numbers become capacity notes rather than inventory.
+
+Set `MADE_TO_ORDER=0` to sell against counted stock: orders are refused when a product hits zero and the storefront shows "N left / sold out" automatically.
+
 ### Order email
 
 Customers get a confirmation with their order link when they check out, and a short note when you change the status to paid, packed, completed or cancelled. Sending goes through [Resend](https://resend.com) — one API call, no extra dependency.
