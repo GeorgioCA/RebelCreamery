@@ -45,6 +45,11 @@ services:
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - ETRANSFER_EMAIL=${ETRANSFER_EMAIL:-hello@rebelcreamery.ca}
 
+      # Order email (Resend). Empty key disables sending.
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-Rebel Creamery <onboarding@resend.dev>}
+      - EMAIL_REPLY_TO=${EMAIL_REPLY_TO:-hello@rebelcreamery.ca}
+
       # Labels. PRINT_TOKEN must match the print agent's env; empty disables /api/print/*.
       - PRINT_TOKEN=${PRINT_TOKEN:-}
       - BUSINESS_ADDRESS=${BUSINESS_ADDRESS:-Rebel Creamery · Calgary, AB}
