@@ -1,3 +1,4 @@
 brother_ql>=0.9.4
 pillow>=10.0
 requests>=2.31
+libusb-package>=1.0.26.2; sys_platform == "win32"

@@ -524,7 +524,12 @@ def list_printers():
         for p in found:
             print("  ", p.get("identifier"), p.get("model") or "")
         if not found:
-            print("   none detected (check the USB cable and the udev rule)")
+            hint = (
+                "check the cable and the WinUSB binding from Zadig"
+                if os.name == "nt"
+                else "check the USB cable and the udev rule"
+            )
+            print("   none detected (" + hint + ")")
     except Exception as exc:
         print("brother: unavailable —", exc)
     if shutil.which("lpstat"):
