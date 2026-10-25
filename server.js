@@ -12,7 +12,7 @@ import {
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
-  renderProductForm, renderLogin, render404
+  renderProductForm, renderLogin, renderOrderAdmin, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
 import { sendOrderConfirmation, sendOrderUpdate, mailConfigured, mailFrom } from "./lib/mail.js";
@@ -539,7 +539,7 @@ app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
   if (order && ["paid", "packed", "completed", "cancelled"].includes(status)) {
     sendOrderUpdate(order, `${baseFor(req)}/order/${order.token}`);
   }
-  res.redirect("/admin");
+  res.redirect(req.body.back === "order" ? `/admin/orders/${encodeURIComponent(req.params.number)}` : "/admin");
 });
 
 app.post("/admin/products/:id/sold-out", adminAuth, (req, res) => {
@@ -567,11 +567,31 @@ app.post("/admin/stock", adminAuth, (req, res) => {
 
 /* --------------------------------- labels -------------------------------- */
 
+app.get("/admin/orders/:number", adminAuth, (req, res) => {
+  const order = getOrder(req.params.number);
+  if (!order) return res.status(404).send(render404());
+  res.send(renderOrderAdmin({
+    order,
+    queued: req.query.queued === "1",
+    sent: req.query.sent === "1",
+    mailFailed: req.query.mail === "0"
+  }));
+});
+
+app.post("/admin/orders/:number/email", adminAuth, async (req, res) => {
+  const order = getOrder(req.params.number);
+  if (!order) return res.status(404).send(render404());
+  const ok = await sendOrderConfirmation(order, `${baseFor(req)}/order/${order.token}`);
+  res.redirect(`/admin/orders/${encodeURIComponent(order.number)}?${ok ? "sent=1" : "mail=0"}`);
+});
+
 app.post("/admin/print/order/:number", adminAuth, (req, res) => {
   const order = getOrder(req.params.number);
   if (!order) return res.status(404).send("No such order.");
   enqueuePrint("order", orderLabel(order), 1);
-  res.redirect("/admin?queued=1");
+  res.redirect(req.body.back === "order"
+    ? `/admin/orders/${encodeURIComponent(order.number)}?queued=1`
+    : "/admin?queued=1");
 });
 
 app.post("/admin/print/product/:id", adminAuth, (req, res) => {
