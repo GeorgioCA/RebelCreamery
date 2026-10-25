@@ -83,6 +83,7 @@ app.get("/api/stock", (_req, res) => {
 });
 
 app.post("/api/checkout", async (req, res) => {
+  let pendingOrder = null;
   try {
     if (limited(req.ip)) return res.status(429).json({ error: "Too many attempts. Try again in a minute." });
 
@@ -137,6 +138,7 @@ app.post("/api/checkout", async (req, res) => {
     }
 
     const { number, token } = createOrder({ ...orderBase, payment: "card", status: "pending" });
+    pendingOrder = number;
     reserveStock(lines);
 
     const session = await stripe.checkout.sessions.create({
@@ -160,9 +162,15 @@ app.post("/api/checkout", async (req, res) => {
     });
 
     db.prepare("UPDATE orders SET stripe_session = ? WHERE number = ?").run(session.id, number);
+    pendingOrder = null;
     res.json({ url: session.url });
   } catch (err) {
     console.error("checkout error:", err);
+    // Card session failed after the order row was written: cancel it so the
+    // customer isn't left with a phantom order holding stock.
+    if (pendingOrder) {
+      try { setStatus(pendingOrder, "cancelled"); } catch (e) { console.error("cleanup failed:", e.message); }
+    }
     res.status(500).json({ error: "Something went wrong. Please try again." });
   }
 });
