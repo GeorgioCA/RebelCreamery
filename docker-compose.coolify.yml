@@ -41,6 +41,8 @@ services:
 
       # Payments. DEMO_MODE=0 means real Stripe only; card is hidden until a key is set.
       - DEMO_MODE=${DEMO_MODE:-0}
+      # 1 = made to order (stock is capacity, manual sold-out switch). 0 = sell against counted stock.
+      - MADE_TO_ORDER=${MADE_TO_ORDER:-1}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - ETRANSFER_EMAIL=${ETRANSFER_EMAIL:-hello@rebelcreamery.ca}

@@ -439,3 +439,10 @@ table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860p
 .order-status.status-paid,.order-status.status-packed{border-color:#4b6b52;color:#3f6b4f;background:#eef4ee}
 .order-status.status-completed{border-color:#4b6b52;color:#3f6b4f;background:#e6efe6}
 .order-status.status-cancelled{border-color:#b2603f;color:#8d3f22;background:#fbeee8}
+
+/* ----------------------------- sold-out toggle ---------------------------- */
+.stat.is-out{opacity:.6}
+.stat-toggle{margin:10px 0 0}
+.stat-toggle button{background:none;border:0;padding:0;font:inherit;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:600;color:var(--clay);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.stat-toggle button:hover{color:var(--ink)}
+.stat.is-out .stat-toggle button{color:var(--ink)}

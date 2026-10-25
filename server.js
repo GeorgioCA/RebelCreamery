@@ -8,7 +8,7 @@ import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, createOrder, deleteProduct, enqueuePrint, finishPrintJob,
   getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary, releaseStock,
-  reserveStock, salesSummary, saveProduct, setStatus, setStock
+  reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
@@ -18,6 +18,9 @@ import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML 
 import { sendOrderConfirmation, sendOrderUpdate, mailConfigured, mailFrom } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
+// Made to order: stock is capacity, not a gate. Set MADE_TO_ORDER=0 to sell against
+// counted stock again (and get "N left" / automatic sold-out back).
+const MADE_TO_ORDER = process.env.MADE_TO_ORDER !== "0";
 const BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
 // Behind a proxy, derive the public origin from the request when PUBLIC_BASE_URL is unset.
 const baseFor = (req) => BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -109,8 +112,12 @@ app.post("/api/checkout", async (req, res) => {
 
     const wanted = lines.reduce((acc, l) => acc + l.qty, 0);
     for (const l of lines) {
-      const available = catalog[l.id].stock ?? 0;
-      if (l.qty > available) return res.status(409).json({ error: `Only ${available} of ${l.name} left this week.` });
+      const prod = catalog[l.id];
+      if (prod.soldOut) return res.status(409).json({ error: `${l.name} is sold out this week.` });
+      if (!MADE_TO_ORDER) {
+        const available = prod.stock ?? 0;
+        if (l.qty > available) return res.status(409).json({ error: `Only ${available} of ${l.name} left this week.` });
+      }
     }
     if (wanted > 24) return res.status(400).json({ error: "That's a lot of dairy — email us for a bulk order." });
 
@@ -122,7 +129,7 @@ app.post("/api/checkout", async (req, res) => {
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {
       const { number, token } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
-      reserveStock(lines);
+      if (!MADE_TO_ORDER) reserveStock(lines);
       const link = `${baseFor(req)}/order/${token}`;
       sendOrderConfirmation(getOrder(number), link);
       return res.json({ url: `/order/${token}` });
@@ -132,14 +139,14 @@ app.post("/api/checkout", async (req, res) => {
     if (!stripe) {
       if (!DEMO) return res.status(503).json({ error: "Card payments are not configured yet. Choose e-Transfer, or add Stripe keys." });
       const { number, token } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
-      reserveStock(lines);
+      if (!MADE_TO_ORDER) reserveStock(lines);
       sendOrderConfirmation(getOrder(number), `${baseFor(req)}/order/${token}`);
       return res.json({ url: `/order/${token}` });
     }
 
     const { number, token } = createOrder({ ...orderBase, payment: "card", status: "pending" });
     pendingOrder = number;
-    reserveStock(lines);
+    if (!MADE_TO_ORDER) reserveStock(lines);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -178,7 +185,7 @@ app.post("/api/checkout", async (req, res) => {
 /* --------------------------------- pages --------------------------------- */
 
 app.get("/", (_req, res) => {
-  res.send(renderHome({ products: listProducts({ activeOnly: true }), demo: DEMO && !stripe }));
+  res.send(renderHome({ products: listProducts({ activeOnly: true }), demo: DEMO && !stripe, madeToOrder: MADE_TO_ORDER }));
 });
 
 app.get("/checkout", (_req, res) => {
@@ -398,11 +405,18 @@ app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
   const allowed = ["pending", "awaiting_etransfer", "paid", "packed", "completed", "cancelled"];
   const status = String(req.body.status || "");
   if (!allowed.includes(status)) return res.status(400).send("Bad status.");
-  const order = setStatus(req.params.number, status);
+  const order = setStatus(req.params.number, status, { moveStock: !MADE_TO_ORDER });
   if (order && ["paid", "packed", "completed", "cancelled"].includes(status)) {
     sendOrderUpdate(order, `${baseFor(req)}/order/${order.token}`);
   }
   res.redirect("/admin");
+});
+
+app.post("/admin/products/:id/sold-out", adminAuth, (req, res) => {
+  const product = getProduct(req.params.id);
+  if (!product) return res.status(404).send("No such product.");
+  setSoldOut(req.params.id, req.body.sold_out === "1");
+  res.redirect(req.body.back === "products" ? "/admin/products" : "/admin");
 });
 
 app.post("/admin/stock", adminAuth, (req, res) => {
