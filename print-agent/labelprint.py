@@ -60,6 +60,9 @@ LOG = logging.getLogger("labelprint")
 # 62 mm tape at 300 dpi = 696 printable dots. Everything is laid out against this.
 WIDTH_PX = 696
 MARGIN = 26
+# Global type scale for printed labels. 1.2 = everything 20% larger than the
+# original 62 mm layout; raise or lower this one number to re-tune the whole label.
+TEXT_SCALE = 1.2
 FONT_DIRS = [
     "/usr/share/fonts/truetype/dejavu",
     "/usr/share/fonts/dejavu",
@@ -77,6 +80,7 @@ _cache: dict[tuple[int, bool], ImageFont.FreeTypeFont] = {}
 
 
 def font(size: int, bold: bool = False):
+    size = max(8, round(size * TEXT_SCALE))
     key = (size, bold)
     if key in _cache:
         return _cache[key]
