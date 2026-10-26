@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hmac
 import io
 import json
 import logging
@@ -270,6 +271,29 @@ def save_png(img: Image.Image, directory: str, name: str) -> str:
     return path
 
 
+def _wire_libusb():
+    """Let pyusb find the libusb-1.0.dll that libusb-package ships inside site-packages.
+
+    pyusb only searches PATH and its own library names, so on Windows every backend
+    lookup returns None and brother_ql reports "no printers detected" even when the
+    device is bound to WinUSB. libusb-package knows where its DLL is; pass that in.
+    """
+    try:
+        import libusb_package
+        import usb.backend.libusb1 as libusb1
+    except ImportError:
+        return
+    if getattr(libusb1, "_labelprint_wired", False):
+        return
+    original = libusb1.get_backend
+
+    def get_backend(find_library=None):
+        return original(find_library=find_library or libusb_package.find_library)
+
+    libusb1.get_backend = get_backend
+    libusb1._labelprint_wired = True
+
+
 def print_brother(img: Image.Image, job: dict, args):
     try:
         from brother_ql.backends.helpers import send
@@ -277,6 +301,8 @@ def print_brother(img: Image.Image, job: dict, args):
         from brother_ql.raster import BrotherQLRaster
     except ImportError:
         raise RuntimeError("brother_ql is not installed (pip install brother_ql)")
+
+    _wire_libusb()
 
     qlr = BrotherQLRaster(job.get("model") or args.model)
     cut = job.get("cut", not getattr(args, "no_cut", False))
@@ -417,7 +443,7 @@ class HttpSource:
                     return True
                 given = (self.headers.get("X-Print-Token")
                          or (self.headers.get("Authorization") or "").replace("Bearer ", ""))
-                return given == outer.token
+                return hmac.compare_digest(given.encode(), str(outer.token).encode())
 
             def _json(self, code, payload):
                 body = json.dumps(payload).encode()
@@ -456,8 +482,12 @@ class HttpSource:
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def start(self):
+        ip, port = self.server.server_address[:2]
+        if not self.token and ip in ("0.0.0.0", "::"):
+            LOG.warning("no token set and bound to %s — anyone on the network can print. "
+                        "Pass --token or bind --host 127.0.0.1", ip)
         self.thread.start()
-        LOG.info("listening on http://%s:%d/print", *self.server.server_address[:2])
+        LOG.info("listening on http://%s:%d/print", ip, port)
 
     def poll(self):
         return []
@@ -523,7 +553,9 @@ def build_source(args):
 def list_printers():
     try:
         from brother_ql.backends.helpers import discover
-        found = discover()
+        _wire_libusb()
+        # discover() defaults to the linux_kernel backend, which finds nothing here.
+        found = discover(backend_identifier="pyusb")
         print("brother (pyusb):")
         for p in found:
             print("  ", p.get("identifier"), p.get("model") or "")
@@ -546,6 +578,14 @@ def list_printers():
 
 # ------------------------------------------------------------------------- main
 def main(argv=None):
+    # Windows consoles and redirected pipes default to cp1252. Label copy and printer
+    # serials can carry characters outside it, which would abort a job mid-print.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
     p = argparse.ArgumentParser(prog="labelprint", description="Background label printer for QL-800 and friends.")
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
