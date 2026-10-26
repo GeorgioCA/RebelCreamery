@@ -42,8 +42,8 @@ async def main():
         await pg.fill("input[name=email]", "ricotta@example.com")
         await pg.check("input[name=payment][value=etransfer]")
         await pg.click("#place-order")
-        await pg.wait_for_url("**/success?order=*", timeout=15000)
-        print("ordered:", pg.url.split("order=")[-1])
+        await pg.wait_for_url("**/order/*", timeout=15000)
+        print("ordered:", pg.url.rsplit("/order/", 1)[-1])
 
         # stock decremented in the admin
         await pg.goto(f"{BASE}/admin/products", wait_until="networkidle")

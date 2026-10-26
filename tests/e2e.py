@@ -1,4 +1,5 @@
 import asyncio
+import os
 from playwright.async_api import async_playwright
 BASE="http://127.0.0.1:3100"
 async def main():
@@ -23,15 +24,17 @@ async def main():
         await pg.fill("input[name=phone]","4035550199")
         await pg.check("input[name=method][value=delivery]")
         print("address visible on delivery:", await pg.is_visible("#address-field"))
-        await pg.fill("input[name=address]","9 9 Ave SW, Calgary AB T2P 1K1")
+        await pg.fill("input[name=street]", "99 Ave SW")
+        await pg.fill("input[name=postal]", "T2P 1K1")
         print("summary:", await pg.inner_text("#sum-total"), "| delivery row visible:", await pg.is_visible("#sum-delivery-row"))
         await pg.check("input[name=payment][value=etransfer]")
         await pg.click("#place-order")
-        await pg.wait_for_url("**/success?order=*", timeout=15000)
+        await pg.wait_for_url("**/order/*", timeout=15000)
         body=await pg.inner_text("body")
         print("url:", pg.url)
         print("has etransfer box:", "Interac e-Transfer" in body, "| total:", [l for l in body.split("\n") if "$" in l][:6])
         print("page errors:", errs)
-        await pg.screenshot(path="/workspace/rebel-creamery/screenshots/success.png", full_page=True)
+        os.makedirs("screenshots", exist_ok=True)
+        await pg.screenshot(path="screenshots/success.png", full_page=True)
         await b.close()
 asyncio.run(main())

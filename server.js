@@ -4,11 +4,12 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
-  db, UPLOAD_DIR, claimPrintJobs, createOrder, deleteProduct, enqueuePrint, finishPrintJob,
-  getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary, releaseStock,
-  reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock
+  db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders,
+  finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary,
+  releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
@@ -30,10 +31,28 @@ const stripe = STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
 const ETRANSFER_EMAIL = process.env.ETRANSFER_EMAIL || site.email;
 const ART_IDS = artOptions.map((a) => a.id);
 const PRINT_TOKEN = process.env.PRINT_TOKEN || "";
+// One cap for both the per-product form and the cart total, so an admin can never
+// set a per-product max that the checkout then rejects with a confusing error.
+const MAX_ITEMS_PER_ORDER = 24;
+
+// A stray rejected promise shouldn't kill the storefront mid-checkout.
+process.on("unhandledRejection", (err) => console.error("unhandled rejection:", err));
 
 const app = express();
 app.set("trust proxy", true);
 app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "DENY");
+  // 'unsafe-inline' stays until the inline __CATALOG__ script and confirm() handlers move out.
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; " +
+      "script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  );
+  next();
+});
 
 /* ------------------------------ checkout API ----------------------------- */
 
@@ -52,7 +71,9 @@ app.post(
     const session = event.data.object;
     const paidEvent = event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded";
     if (paidEvent && session?.payment_status === "paid") {
-      const order = markPaid(session.id);
+      // markPaid only returns the order when pending → paid actually happened,
+      // so Stripe's at-least-once retries don't re-send the confirmation email.
+      const order = markPaid(session.id, session.client_reference_id);
       if (order) {
         console.log(`paid: ${order.number}`);
         sendOrderConfirmation(order, `${baseFor(req)}/order/${order.token}`);
@@ -62,9 +83,10 @@ app.post(
   }
 );
 
+const PUBLIC_DIR = fileURLToPath(new URL("./public/", import.meta.url));
 app.use(express.json({ limit: "32kb" }));
 app.use(express.urlencoded({ extended: false }));
-app.use(express.static("public", { maxAge: "7d", setHeaders: (res, p) => {
+app.use(express.static(PUBLIC_DIR, { maxAge: "7d", setHeaders: (res, p) => {
   if (p.endsWith(".html")) res.setHeader("Cache-Control", "no-store");
 }}));
 app.use("/media", express.static(UPLOAD_DIR, { maxAge: "365d", immutable: true, index: false }));
@@ -78,6 +100,12 @@ function limited(ip, max = 12, windowMs = 60_000) {
   buckets.set(ip, b);
   return b.count > max;
 }
+
+// Sweep expired buckets so unique visitor IPs can't grow the map forever.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, b] of buckets) if (now > b.reset) buckets.delete(ip);
+}, 10 * 60_000).unref();
 
 
 /* ------------------------------ addresses -------------------------------- */
@@ -249,7 +277,7 @@ app.post("/api/checkout", async (req, res) => {
         if (l.qty > available) return res.status(409).json({ error: `Only ${available} of ${l.name} left this week.` });
       }
     }
-    if (wanted > 24) return res.status(400).json({ error: "That's a lot of dairy — email us for a bulk order." });
+    if (wanted > MAX_ITEMS_PER_ORDER) return res.status(400).json({ error: "That's a lot of dairy — email us for a bulk order." });
 
     const subtotalCents = lines.reduce((s, l) => s + l.priceCents * l.qty, 0);
     const deliveryCents = method === "delivery" && subtotalCents < delivery.freeOverCents ? delivery.feeCents : 0;
@@ -284,6 +312,8 @@ app.post("/api/checkout", async (req, res) => {
       customer_email: email.trim(),
       client_reference_id: number,
       metadata: { order_number: number },
+      // Sessions die after 23 h (Stripe's max is 24 h); the 48 h sweep is the backstop.
+      expires_at: Math.floor(Date.now() / 1000) + 23 * 60 * 60,
       line_items: [
         ...lines.map((l) => ({
           quantity: l.qty,
@@ -296,7 +326,7 @@ app.post("/api/checkout", async (req, res) => {
       success_url: `${baseFor(req)}/order/${token}`,
       cancel_url: `${baseFor(req)}/checkout?canceled=1`,
       payment_intent_data: { metadata: { order_number: number } }
-    });
+    }, { idempotency_key: `checkout-${number}` });
 
     db.prepare("UPDATE orders SET stripe_session = ? WHERE number = ?").run(session.id, number);
     pendingOrder = null;
@@ -323,11 +353,13 @@ app.get("/checkout", (_req, res) => {
 });
 
 app.get("/order/:token", (req, res) => {
+  res.set("Cache-Control", "no-store"); // order status changes; don't let it get cached
   res.send(renderSuccess({ order: getOrderByToken(req.params.token), origin: baseFor(req) }));
 });
 
 // Staff lookup by order number. Public success links use /order/:token instead.
 app.get("/success", adminAuth, (req, res) => {
+  res.set("Cache-Control", "no-store");
   res.send(renderSuccess({ order: getOrder(String(req.query.order || "")), origin: baseFor(req) }));
 });
 
@@ -345,16 +377,20 @@ const SESSION_SECRET = process.env.SESSION_SECRET || process.env.ADMIN_PASSWORD 
 
 function signSession(user) {
   const exp = Date.now() + SESSION_TTL_MS;
-  const payload = `${user}.${exp}`;
+  // base64url keeps dots out of the payload, so the token always splits into exactly
+  // three parts even when ADMIN_USER itself contains a dot.
+  const payload = `${Buffer.from(user).toString("base64url")}.${exp}`;
   const sig = crypto.createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
   return `${payload}.${sig}`;
 }
 
 function verifySession(token) {
   if (!token) return false;
-  const [user, exp, sig] = String(token).split(".");
-  if (!user || !exp || !sig) return false;
-  const expect = crypto.createHmac("sha256", SESSION_SECRET).update(`${user}.${exp}`).digest("base64url");
+  const [userB64, exp, sig] = String(token).split(".");
+  if (!userB64 || !exp || !sig) return false;
+  let user;
+  try { user = Buffer.from(userB64, "base64url").toString(); } catch { return false; }
+  const expect = crypto.createHmac("sha256", SESSION_SECRET).update(`${userB64}.${exp}`).digest("base64url");
   const a = Buffer.from(sig), b = Buffer.from(expect);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
   return Number(exp) > Date.now() && user === process.env.ADMIN_USER;
@@ -363,7 +399,9 @@ function verifySession(token) {
 function readCookie(req, name) {
   for (const part of String(req.headers.cookie || "").split(";")) {
     const [k, ...v] = part.trim().split("=");
-    if (k === name) return decodeURIComponent(v.join("="));
+    if (k !== name) continue;
+    // A malformed %-sequence in the cookie header would otherwise throw a 500.
+    try { return decodeURIComponent(v.join("=")); } catch { return v.join("="); }
   }
   return "";
 }
@@ -443,10 +481,16 @@ app.post("/admin/logout", (_req, res) => {
   res.redirect("/admin/login");
 });
 
+const PAGE_SIZE = 100;
+
 app.get("/admin", adminAuth, (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const total = countOrders();
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   res.send(renderAdmin({
-    orders: listOrders(100), summary: salesSummary(), products: listProducts(),
-    printQueue: printQueueSummary(), queued: req.query.queued === "1"
+    orders: listOrders(PAGE_SIZE, (page - 1) * PAGE_SIZE), summary: salesSummary(), products: listProducts(),
+    printQueue: printQueueSummary(), queued: req.query.queued === "1", madeToOrder: MADE_TO_ORDER,
+    pager: { page, pageCount, total }
   }));
 });
 
@@ -475,9 +519,10 @@ function parseProductBody(body) {
     tags: String(body.tags || "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 8),
     art: ART_IDS.includes(body.art) ? body.art : "generic",
     stock: Math.max(0, parseInt(body.stock, 10) || 0),
-    maxPerOrder: Math.min(50, Math.max(1, parseInt(body.max, 10) || 12)),
+    maxPerOrder: Math.min(MAX_ITEMS_PER_ORDER, Math.max(1, parseInt(body.max, 10) || 12)),
     sortOrder: Math.max(0, parseInt(body.sort, 10) || 100),
     active: body.active === "1",
+    soldOut: body.sold_out === "1",
     ingredients: String(body.ingredients || "").trim(),
     allergens: String(body.allergens || "Milk").trim() || "Milk",
     shelfLifeDays: Math.min(365, Math.max(1, parseInt(body.shelf_life_days, 10) || 14)),
@@ -642,6 +687,18 @@ app.get("/api/print/status", printAuth, (_req, res) => {
 });
 
 app.use((_req, res) => res.status(404).send(render404()));
+
+/* --------------------------- pending-order expiry ------------------------ */
+// Abandoned card checkouts hold stock in counted mode, so cancel anything still
+// 'pending' long after its Stripe session could have been paid. Runs once at boot
+// (catches orders left hanging while the container was down) and then every 30 min.
+// No email: the customer never finished paying. e-Transfer orders never expire.
+function sweepPendingOrders() {
+  const expired = expireStalePendingOrders(48 * 3600 * 1000, { moveStock: !MADE_TO_ORDER });
+  if (expired.length) console.log(`expired unpaid orders: ${expired.join(", ")}`);
+}
+sweepPendingOrders();
+setInterval(sweepPendingOrders, 30 * 60_000).unref();
 
 app.listen(PORT, () => {
   console.log(`${site.name} on ${BASE_URL || "(request origin)"} (port ${PORT})`);

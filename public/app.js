@@ -5,6 +5,8 @@
   const KEY = "rc_cart_v1";
   const byId = Object.fromEntries(CATALOG.map((p) => [p.id, p]));
   const money = (c) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(c / 100);
+  const esc = (s = "") =>
+    String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   /* ------------------------------- storage ------------------------------- */
   function read() {
@@ -83,18 +85,18 @@
 
     body.innerHTML = Object.entries(cart).map(([id, q]) => {
       const p = byId[id];
-      return `<div class="cart-item" data-id="${id}">
+      return `<div class="cart-item" data-id="${esc(id)}">
         <div>
-          <h3>${p.name}</h3>
-          <span class="meta">${p.weight} · ${money(p.priceCents)}</span>
+          <h3>${esc(p.name)}</h3>
+          <span class="meta">${esc(p.weight)} · ${money(p.priceCents)}</span>
         </div>
         <span class="line-total">${money(p.priceCents * q)}</span>
         <div class="stepper">
-          <button type="button" data-cart-step="-1" data-id="${id}" aria-label="Decrease ${p.name}">−</button>
-          <input type="number" value="${q}" min="0" max="${p.max}" data-cart-qty data-id="${id}" aria-label="${p.name} quantity"/>
-          <button type="button" data-cart-step="1" data-id="${id}" aria-label="Increase ${p.name}">+</button>
+          <button type="button" data-cart-step="-1" data-id="${esc(id)}" aria-label="Decrease ${esc(p.name)}">−</button>
+          <input type="number" value="${q}" min="0" max="${p.max}" data-cart-qty data-id="${esc(id)}" aria-label="${esc(p.name)} quantity"/>
+          <button type="button" data-cart-step="1" data-id="${esc(id)}" aria-label="Increase ${esc(p.name)}">+</button>
         </div>
-        <button class="remove" type="button" data-remove="${id}">Remove</button>
+        <button class="remove" type="button" data-remove="${esc(id)}">Remove</button>
       </div>`;
     }).join("");
 
@@ -177,7 +179,7 @@
       } else {
         itemsEl.innerHTML = `<ul class="sum-items">${Object.entries(cart).map(([id, q]) => {
           const p = byId[id];
-          return `<li><span>${p.name} ${p.weight} <span class="q">× ${q}</span></span><span>${money(p.priceCents * q)}</span></li>`;
+          return `<li><span>${esc(p.name)} ${esc(p.weight)} <span class="q">× ${q}</span></span><span>${money(p.priceCents * q)}</span></li>`;
         }).join("")}</ul>`;
         submit.disabled = false;
       }
@@ -210,7 +212,7 @@
     function showSuggest(list) {
       sugItems = list; sugIndex = -1;
       if (!list.length) return hideSuggest();
-      sugEl.innerHTML = list.map((r, i) => `<li role="option" data-i="${i}">${r.label}</li>`).join("");
+      sugEl.innerHTML = list.map((r, i) => `<li role="option" data-i="${i}">${esc(r.label)}</li>`).join("");
       sugEl.hidden = false;
     }
 

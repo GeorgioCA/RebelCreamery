@@ -41,6 +41,10 @@ STORE_URL=https://shop.example.ca PRINT_TOKEN=… \
 python3 labelprint.py run --source store --backend brother
 ```
 
+Jobs are leased when polled (5-minute lease): a crash between printing and the
+ack reprints the label once, and a second agent can't silently double-print
+whatever the first one is holding.
+
 **Spool folder** — any program (cron, a spreadsheet export, a shell script) drops a `.json` file in
 and it prints; the file moves to `printed/` or `failed/`:
 
