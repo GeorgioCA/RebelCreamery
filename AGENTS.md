@@ -4,7 +4,7 @@ Instructions for anyone — human or coding agent — working in this repository
 
 ## What this is
 
-Rebel Creamery's storefront: a small-batch dairy in Calgary selling yogurt, cream cheese and halloumi for pickup or Friday delivery. One Node process, one SQLite file, one container. Not a framework, not a CMS.
+Rebel Creamery's storefront: a small-batch dairy in Calgary selling yogurt (3% and 6%), cream cheese, halloumi and cultured butter for pickup or Friday delivery. One Node process, one SQLite file, one container. Not a framework, not a CMS.
 
 **Stack:** Node 22 (ESM, no build step) · Express 5 · `node:sqlite` · server-rendered HTML strings · plain CSS and vanilla JS · Stripe Checkout · Resend email · Brother QL-800 labels.
 
@@ -31,20 +31,27 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 |---|---|
 | `server.js` | All routes: storefront, checkout, admin, print API, Stripe webhook |
 | `lib/db.js` | SQLite schema, migrations, product/order/print-job queries |
-| `lib/views.js` | Every HTML template as a template literal |
+| `lib/views.js` | Every HTML template as a template literal, plus the inline SVG product illustrations |
 | `lib/catalog.js` | Seed products, site copy defaults, delivery config |
 | `lib/mail.js` | Resend templates (confirmation, status update) |
 | `lib/labels.js` | 62 mm label rendering |
 | `lib/assets.js` | Content-hash query strings for CSS/JS |
 | `public/` | `styles.css`, `app.js` (cart, checkout, address autofill) |
-| `print-agent/` | Standalone Python label daemon — separate from the web app |
+| `print-agent/` | Standalone Python label daemon (Linux, macOS or Windows — see its README) |
 | `tests/` | Playwright and smoke tests, run by hand |
 | `data/` | SQLite + uploaded photos. **Gitignored. This is the business record.** |
+
+## Admin surfaces
+
+- `/admin` — order book: summary tiles, paginated order table (`?page=`), status dropdown, Label, View.
+- `/admin/orders/:number` — one order: customer, fulfilment, items, status/label/resend actions.
+- `/admin/products` — product table; `/admin/products/:id` edits a product, sets stock and sold-out, and queues labels.
+- Stock and the sold-out flag are only editable per product — there are no stock cards on the dashboard.
 
 ## Conventions
 
 - **Money is integer cents**, CAD, everywhere. Format only at the edge with `money()`. No floats for money.
-- **No client framework.** Views are template literals; interactivity is plain DOM in `public/app.js`. Don't introduce React/Vue/Tailwind for a 3-SKU shop.
+- **No client framework.** Views are template literals; interactivity is plain DOM in `public/app.js`. Don't introduce React/Vue/Tailwind for a five-product shop.
 - **Server-rendered forms post and redirect.** No JSON APIs for admin screens.
 - **Products are data, not code.** Adding a SKU must never require a deploy.
 - **Escape everything interpolated into HTML** with `esc()`. Most values come from the owner or customers.
@@ -86,7 +93,7 @@ No test runner in CI. Verify changes with the preview server plus a Playwright s
 
 - Checkout end to end: add to cart → checkout → order page → admin detail.
 - Product CRUD in `/admin/products`, including hide, sold out, and delete.
-- `tests/product_flow.py` and `tests/labelprint_smoke.py` are the existing scripts.
+- Existing scripts: `tests/e2e.py` (checkout), `tests/product_flow.py` (admin CRUD), `tests/check.py` (live sanity), `tests/labelprint_smoke.py` (renderer). `tests/shot*.py` take screenshots.
 - Anything touching money, stock or the webhook: test against a Stripe test key, never a live charge.
 
 ## Gotchas
@@ -94,5 +101,7 @@ No test runner in CI. Verify changes with the preview server plus a Playwright s
 - `node:sqlite` is still marked experimental — the warning on boot is expected.
 - `MAX(0, stock - ?)` means stock can't go negative; don't read it as a demand signal.
 - Route order matters in Express: `/admin/orders/:number` must not shadow the more specific routes.
-- The print agent runs on the machine with the printer, not in the container. Labels are queued in SQLite and polled.
+- The print agent runs on the machine with the printer, not in the container. Labels are queued in SQLite and polled. On Windows it needs a WinUSB binding via Zadig, not a Brother driver — see `print-agent/README.md`.
+- Label type size is one knob in each renderer: `TEXT_SCALE` in `print-agent/labelprint.py` and `--ts` in `lib/labels.js`. Change both or the browser and printed labels drift apart.
+- The yogurt illustration shows `{{FAT}}`, filled from the product name or tags (`artFor`). Don't hardcode a percentage into the SVG.
 - WhatsApp/SMS do not exist. Email is the only outbound channel.
