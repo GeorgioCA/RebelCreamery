@@ -534,6 +534,9 @@ app.post("/admin/products", adminAuth, (req, res) => {
   upload.single("image")(req, res, (uploadErr) => {
     const body = req.body || {};
     const existing = body.id ? getProduct(body.id) : null;
+    // An unknown id means "create this product under that id"; saveProduct only
+    // updates when an id is present, so clear it and let the slug be generated.
+    if (body.id && !existing) body.id = "";
     const draft = { ...(existing || {}), ...parseProductBody(body), image: existing?.image ?? null };
 
     if (uploadErr) {
