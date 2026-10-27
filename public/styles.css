@@ -143,10 +143,17 @@ ul,ol,dl{margin:0;padding:0}
 }
 .card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--line-strong)}
 .card.is-soldout{opacity:.62}
-.card-art{display:grid;place-items:center;padding:30px 10px 6px;min-height:212px}
+.card-art{display:grid;place-items:center;padding:30px 10px 6px;min-height:212px;background:linear-gradient(170deg,#faf5e9,#e8dfcb)}
 .art-yogurt{background:linear-gradient(170deg,#fff7e2,#f7e9c8)}
-.art-creamcheese{background:linear-gradient(170deg,#faf5ea,#efe4cf)}
+.art-creamcheese{background:linear-gradient(170deg,#faf3e2,#ecdcbe)}
 .art-halloumi{background:linear-gradient(170deg,#fdf1e4,#f3dcc6)}
+.art-butter{background:linear-gradient(170deg,#fdf6e2,#f2dfae)}
+.art-bottle{background:linear-gradient(170deg,#f8f4e8,#e7ddc8)}
+.art-ricotta{background:linear-gradient(170deg,#fbf3e2,#e9d9b9)}
+.art-labneh{background:linear-gradient(170deg,#fcf6e6,#eadcbb)}
+.art-zatar{background:linear-gradient(170deg,#f6f6ea,#e5e8cd)}
+.art-cremefraiche{background:linear-gradient(170deg,#fdf7e7,#f0e0bf)}
+.art-generic{background:linear-gradient(170deg,#faf5e9,#e8dfcb)}
 .card-art .art-svg{width:126px;height:auto;color:var(--ink)}
 .card-body{padding:22px 24px 26px;display:flex;flex-direction:column;flex:1}
 .card-top{display:flex;justify-content:space-between;align-items:baseline;gap:14px}
