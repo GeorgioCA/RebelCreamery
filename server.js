@@ -469,6 +469,23 @@ app.get("/admin/login", (req, res) => {
 });
 
 
+
+// Public store description for tools (weekly social generator, site checks).
+app.get("/api/store.json", (_req, res) => {
+  res.json({
+    site: {
+      name: site.name, tagline: site.tagline, email: site.email,
+      pickupLocation: site.pickupLocation, pickupWindow: site.pickupWindow,
+      cutoff: site.cutoff, instagram: site.instagram, etransferEmail: site.etransferEmail
+    },
+    delivery,
+    products: listProducts({ activeOnly: true }).map((p) => ({
+      id: p.id, sku: p.sku, name: p.name, weight: p.weight, priceCents: p.priceCents,
+      note: p.note, tags: p.tags, art: p.art
+    }))
+  });
+});
+
 app.get("/admin/settings", adminAuth, (req, res) => {
   res.send(renderSettings({ saved: req.query.saved === "1", error: req.query.error || "" }));
 });
