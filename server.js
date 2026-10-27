@@ -9,7 +9,7 @@ import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary,
-  releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock
+  releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, nextSku
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
@@ -494,6 +494,25 @@ app.get("/admin", adminAuth, (req, res) => {
   }));
 });
 
+app.get("/admin/products.csv", adminAuth, (req, res) => {
+  const rows = [["sku", "name", "weight", "price_cad", "stock", "status", "sort"]];
+  for (const p of listProducts()) {
+    rows.push([
+      p.sku || "",
+      p.name,
+      p.weight,
+      (p.priceCents / 100).toFixed(2),
+      String(p.stock ?? 0),
+      p.soldOut ? "sold out" : p.active ? "live" : "hidden",
+      String(p.sortOrder ?? "")
+    ]);
+  }
+  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="rebel-creamery-products.csv"');
+  res.send("\uFEFF" + csv);
+});
+
 app.get("/admin/products", adminAuth, (_req, res) => {
   res.send(renderProductsAdmin({ products: listProducts() }));
 });
@@ -512,6 +531,7 @@ function parseProductBody(body) {
   const cents = Math.round(Number(String(body.price || "").replace(/[^0-9.]/g, "")) * 100);
   return {
     id: body.id || "",
+    sku: String(body.sku || "").toUpperCase().replace(/[^A-Z0-9._-]/g, "").slice(0, 24),
     name: String(body.name || "").trim(),
     weight: String(body.weight || "").trim(),
     priceCents: Number.isFinite(cents) ? Math.max(0, cents) : NaN,
@@ -556,6 +576,19 @@ app.post("/admin/products", adminAuth, (req, res) => {
     } else if (body.remove_image === "1") {
       draft.image = null;
       if (existing?.image) removeUpload(existing.image);
+    }
+
+    // SKUs are unique across products; empty means "use the next RC-number".
+    if (draft.sku) {
+      const clash = listProducts().find((p) => p.sku === draft.sku && p.id !== draft.id);
+      if (clash) {
+        return res.status(400).send(renderProductForm({
+          product: draft,
+          error: `SKU ${draft.sku} is already used by ${clash.name}.`
+        }));
+      }
+    } else if (!existing) {
+      draft.sku = nextSku();
     }
 
     saveProduct(draft);
