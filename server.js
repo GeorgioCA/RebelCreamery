@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
-  db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders,
+  db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary,
   releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku
 } from "./lib/db.js";
@@ -16,7 +16,7 @@ import {
   renderProductForm, renderLogin, renderOrderAdmin, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
-import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, mailConfigured, mailFrom } from "./lib/mail.js";
+import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, mailConfigured, mailFrom } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
 // Made to order: stock is capacity, not a gate. Set MADE_TO_ORDER=0 to sell against
@@ -740,6 +740,29 @@ function sweepPendingOrders() {
 }
 sweepPendingOrders();
 setInterval(sweepPendingOrders, 30 * 60_000).unref();
+
+
+/* e-Transfers arrive with no signal — Koho (like every consumer account) has no
+   webhook. So once a morning, mountain time, list the ones still unconfirmed.
+   Guarded by the local date so a restart mid-morning can't double-send.        */
+let digestDay = "";
+setInterval(async () => {
+  try {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Edmonton", hour: "2-digit", hour12: false, year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(now).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+    const day = `${parts.year}-${parts.month}-${parts.day}`;
+    if (Number(parts.hour) !== 8 || digestDay === day) return;
+    const unpaid = listUnpaidEtransfers();
+    if (!unpaid.length) { digestDay = day; return; }
+    digestDay = day;
+    const ok = await sendEtransferDigest(unpaid, `${BASE_URL.replace(/\/$/, "")}/admin`);
+    console.log(`[digest] ${unpaid.length} unpaid e-transfer(s) -> ${ok ? "sent" : "skipped"}`);
+  } catch (err) {
+    console.error("[digest] failed:", err.message);
+  }
+}, 30 * 60 * 1000).unref();
 
 app.listen(PORT, () => {
   console.log(`${site.name} on ${BASE_URL || "(request origin)"} (port ${PORT})`);
