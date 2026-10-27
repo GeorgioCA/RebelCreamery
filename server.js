@@ -16,7 +16,7 @@ import {
   renderProductForm, renderLogin, renderOrderAdmin, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
-import { sendOrderConfirmation, sendOrderUpdate, mailConfigured, mailFrom } from "./lib/mail.js";
+import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, mailConfigured, mailFrom } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
 // Made to order: stock is capacity, not a gate. Set MADE_TO_ORDER=0 to sell against
@@ -77,6 +77,7 @@ app.post(
       if (order) {
         console.log(`paid: ${order.number}`);
         sendOrderConfirmation(order, `${baseFor(req)}/order/${order.token}`);
+        sendOwnerOrderAlert(order, `${baseFor(req)}/admin/orders/${order.number}`);
       }
     }
     res.json({ received: true });
@@ -289,7 +290,9 @@ app.post("/api/checkout", async (req, res) => {
       const { number, token } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
       if (!MADE_TO_ORDER) reserveStock(lines);
       const link = `${baseFor(req)}/order/${token}`;
-      sendOrderConfirmation(getOrder(number), link);
+      const etransferOrder = getOrder(number);
+      sendOrderConfirmation(etransferOrder, link);
+      sendOwnerOrderAlert(etransferOrder, `${baseFor(req)}/admin/orders/${number}`);
       return res.json({ url: `/order/${token}` });
     }
 
@@ -298,7 +301,9 @@ app.post("/api/checkout", async (req, res) => {
       if (!DEMO) return res.status(503).json({ error: "Card payments are not configured yet. Choose e-Transfer, or add Stripe keys." });
       const { number, token } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
       if (!MADE_TO_ORDER) reserveStock(lines);
-      sendOrderConfirmation(getOrder(number), `${baseFor(req)}/order/${token}`);
+      const demoOrder = getOrder(number);
+      sendOrderConfirmation(demoOrder, `${baseFor(req)}/order/${token}`);
+      sendOwnerOrderAlert(demoOrder, `${baseFor(req)}/admin/orders/${number}`);
       return res.json({ url: `/order/${token}` });
     }
 
