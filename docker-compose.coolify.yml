@@ -51,6 +51,7 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - EMAIL_FROM=${EMAIL_FROM:-Rebel Creamery <onboarding@resend.dev>}
       - OWNER_EMAIL=${OWNER_EMAIL:-}
+      - ETRANSFER_DIGEST=${ETRANSFER_DIGEST:-0}
       - EMAIL_REPLY_TO=${EMAIL_REPLY_TO:-hello@rebelcreamery.ca}
 
       # Labels. PRINT_TOKEN must match the print agent's env; empty disables /api/print/*.

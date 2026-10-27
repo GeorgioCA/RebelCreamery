@@ -745,8 +745,10 @@ setInterval(sweepPendingOrders, 30 * 60_000).unref();
 /* e-Transfers arrive with no signal — Koho (like every consumer account) has no
    webhook. So once a morning, mountain time, list the ones still unconfirmed.
    Guarded by the local date so a restart mid-morning can't double-send.        */
+const ETRANSFER_DIGEST = process.env.ETRANSFER_DIGEST === "1"; // off unless asked for
 let digestDay = "";
 setInterval(async () => {
+  if (!ETRANSFER_DIGEST) return;
   try {
     const now = new Date();
     const parts = new Intl.DateTimeFormat("en-CA", {
