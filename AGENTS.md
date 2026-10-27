@@ -33,7 +33,8 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 | `lib/db.js` | SQLite schema, migrations, product/order/print-job queries |
 | `lib/views.js` | Every HTML template as a template literal, plus the inline SVG product illustrations |
 | `lib/catalog.js` | Seed products, site copy defaults, delivery config |
-| `lib/mail.js` | Resend templates (confirmation, status update, owner alert) |
+| `lib/mail.js` | Resend templates (confirmation, status update, owner alert, digests) |
+| `lib/catalog.js` | Env defaults for store text/pricing + `applySettings()` mutating `site`/`delivery` |
 | `lib/labels.js` | 62 mm label rendering |
 | `lib/assets.js` | Content-hash query strings for CSS/JS |
 | `public/` | `styles.css`, `app.js` (cart, checkout, address autofill) |
@@ -86,6 +87,8 @@ Two rules learned the hard way:
 - **Stripe** — Checkout Sessions; `locale: "auto"` (Stripe rejects `en-CA`). Webhook `/api/stripe/webhook` handles `checkout.session.completed` and `checkout.session.async_payment_succeeded`, and only marks paid when `payment_status === "paid"`. **Refunds are manual, by design** — cancelling an order does not refund. Unpaid card orders auto-cancel after 48 h (sessions themselves expire at 23 h) and return held stock; e-Transfer orders never auto-cancel.
 - **Resend** — sends from `orders@rebelcreamery.ca`, domain verified. Customers get a confirmation at checkout and a note on status changes (paid/packed/completed/cancelled). The owner gets a one-per-order alert at `OWNER_EMAIL` (currently `hello@rebelcreamery.ca`) on card payment and on e-Transfer order creation; reply-to is the customer. Failures log, never block a sale.
 - **Address autofill** — `/api/address` proxies Photon (OSM), `/api/postal/:fsa` proxies Zippopotam. Free and keyless; cached in memory and rate-limited. Neither confirms deliverability.
+- **Settings live in SQLite** (`settings` table), applied at boot by `applySettings()`, which mutates the shared `site`/`delivery` objects — so edits take effect on the next render with no restart. Env vars stay the defaults; `/admin/settings` is the runtime editor. Anything that changes stock semantics (`MADE_TO_ORDER`) or credentials (Stripe, Resend) stays in env.
+- **Never read `process.env` for store text at render time** — use `site.*` / `delivery.*`, or a settings edit will be ignored in that one place (this bit the e-Transfer address in four files).
 - **Scheduled mail** (America/Edmonton, in-process `setInterval`, `.unref()`): 08:00 daily → e-Transfer digest, only when something is unconfirmed; Thursday 19:00 → batch summary (make list, pickup/delivery, unpaid). Both guard on the local date so a restart can't double-send. No cron on the host.
 - **Stripe/Resend failures must degrade, not 500.** Checkout works with email down; the store works with Stripe unset (e-Transfer only).
 
