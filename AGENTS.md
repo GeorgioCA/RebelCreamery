@@ -63,7 +63,7 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 - Schema changes go through the **column migration block** in `lib/db.js` — `ALTER TABLE ... ADD COLUMN` guarded by a `PRAGMA table_info` check. Never drop or rewrite a table that holds orders.
 - `orders` and `order_items` are append-only history. Products may be deleted; past orders keep their own copy of name and price.
 - The SQLite file lives on the `creamery-data` volume at `/data`. Back it up before any migration you're unsure about.
-- Every product carries a **SKU** (`RC-1001` style by default, editable, unique). It is printed on product labels and stored on order lines as a snapshot, so a later SKU change never rewrites history. Export `/admin/products.csv` for bookkeeping.
+- Every product carries a **SKU** generated from name and size (`RC-YOG-6-750`, `RC-LAB-ZAT-500`), editable and unique. It is printed on product labels and stored on order lines as a snapshot, so a later SKU change never rewrites history. Export `/admin/products.csv` for bookkeeping.
 - Stock semantics: `MADE_TO_ORDER=1` (default) means stock **never gates** an order — it's a capacity note. The per-product `sold_out` flag is the only thing that stops sales. `MADE_TO_ORDER=0` restores counted stock with automatic sold-out at zero.
 
 ## Auth and secrets
