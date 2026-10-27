@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<style>
+  html,body{margin:0;padding:0;background:#000;}
+  svg{display:block}
+</style></head>
+<body>
+<svg width="1080" height="1080" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#3c5544"/>
+      <stop offset="100%" stop-color="#243428"/>
+    </radialGradient>
+    <linearGradient id="cream" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fdfaf3"/>
+      <stop offset="100%" stop-color="#efe5d1"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1080" height="1080" fill="url(#bg)"/>
+
+  <!-- hairline ring, keeps the mark from floating -->
+  <circle cx="540" cy="540" r="392" fill="none" stroke="#f4c95d" stroke-opacity=".35" stroke-width="3"/>
+
+  <!-- the brand droplet, from the site header -->
+  <g transform="translate(540 512) scale(31) translate(-12 -12)">
+    <path d="M12 3c3.2 3.8 5.2 6.2 5.2 8.7A5.2 5.2 0 0 1 12 17a5.2 5.2 0 0 1-5.2-5.3C6.8 9.2 8.8 6.8 12 3z" fill="url(#cream)"/>
+  </g>
+
+  <!-- gold dot: the one bit of "rebel" -->
+  <circle cx="540" cy="836" r="17" fill="#f4c95d"/>
+</svg>
+</body></html>
