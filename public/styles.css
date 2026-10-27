@@ -475,3 +475,14 @@ table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860p
 .action-row form{margin:0}
 
 .totals-label{margin:0 0 8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
+
+/* --------------------------- order book row actions -------------------------- */
+.row-tools{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.status-pick{display:flex;align-items:center;gap:4px;margin:0;flex:0 0 auto}
+.status-pick select{margin:0;padding:6px;font-size:12px;width:138px;flex:0 0 138px;max-width:none}
+.icon-btn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);
+  padding:0;cursor:pointer;flex:0 0 auto;text-decoration:none}
+.icon-btn:hover{border-color:var(--line-strong);background:var(--paper-2)}
+.icon-btn svg{display:block}
+.orders td:last-child{white-space:nowrap}
