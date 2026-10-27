@@ -9,7 +9,7 @@ import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary,
-  releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, nextSku
+  releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
@@ -588,7 +588,7 @@ app.post("/admin/products", adminAuth, (req, res) => {
         }));
       }
     } else if (!existing) {
-      draft.sku = nextSku();
+      draft.sku = suggestSku(draft);
     }
 
     saveProduct(draft);
