@@ -265,7 +265,7 @@ app.post("/api/checkout", async (req, res) => {
       const qty = Number(raw?.qty);
       if (!p) return res.status(400).json({ error: "That product is no longer available." });
       if (!Number.isInteger(qty) || qty < 1 || qty > p.maxPerOrder) return res.status(400).json({ error: `Invalid quantity for ${p.name}.` });
-      lines.push({ id: p.id, name: `${p.name} ${p.weight}`.trim(), priceCents: p.priceCents, qty });
+      lines.push({ id: p.id, sku: p.sku, name: `${p.name} ${p.weight}`.trim(), priceCents: p.priceCents, qty });
     }
 
     const wanted = lines.reduce((acc, l) => acc + l.qty, 0);
