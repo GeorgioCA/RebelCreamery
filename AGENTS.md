@@ -86,6 +86,7 @@ Two rules learned the hard way:
 - **Stripe** — Checkout Sessions; `locale: "auto"` (Stripe rejects `en-CA`). Webhook `/api/stripe/webhook` handles `checkout.session.completed` and `checkout.session.async_payment_succeeded`, and only marks paid when `payment_status === "paid"`. **Refunds are manual, by design** — cancelling an order does not refund. Unpaid card orders auto-cancel after 48 h (sessions themselves expire at 23 h) and return held stock; e-Transfer orders never auto-cancel.
 - **Resend** — sends from `orders@rebelcreamery.ca`, domain verified. Customers get a confirmation at checkout and a note on status changes (paid/packed/completed/cancelled). The owner gets a one-per-order alert at `OWNER_EMAIL` (currently `hello@rebelcreamery.ca`) on card payment and on e-Transfer order creation; reply-to is the customer. Failures log, never block a sale.
 - **Address autofill** — `/api/address` proxies Photon (OSM), `/api/postal/:fsa` proxies Zippopotam. Free and keyless; cached in memory and rate-limited. Neither confirms deliverability.
+- **Scheduled mail** (America/Edmonton, in-process `setInterval`, `.unref()`): 08:00 daily → e-Transfer digest, only when something is unconfirmed; Thursday 19:00 → batch summary (make list, pickup/delivery, unpaid). Both guard on the local date so a restart can't double-send. No cron on the host.
 - **Stripe/Resend failures must degrade, not 500.** Checkout works with email down; the store works with Stripe unset (e-Transfer only).
 
 ## Testing

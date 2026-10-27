@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { site, delivery, money, artOptions } from "./lib/catalog.js";
 import {
-  db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers,
+  db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary,
   releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku
 } from "./lib/db.js";
@@ -16,7 +16,7 @@ import {
   renderProductForm, renderLogin, renderOrderAdmin, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
-import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, mailConfigured, mailFrom } from "./lib/mail.js";
+import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, sendWeeklySummary, mailConfigured, mailFrom } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
 // Made to order: stock is capacity, not a gate. Set MADE_TO_ORDER=0 to sell against
@@ -761,6 +761,26 @@ setInterval(async () => {
     console.log(`[digest] ${unpaid.length} unpaid e-transfer(s) -> ${ok ? "sent" : "skipped"}`);
   } catch (err) {
     console.error("[digest] failed:", err.message);
+  }
+}, 30 * 60 * 1000).unref();
+
+/* Thursday 7 pm, after the cutoff: what to make, who is coming, what is unpaid. */
+let summaryWeek = "";
+setInterval(async () => {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Edmonton", weekday: "short", hour: "2-digit", hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(new Date()).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+    const day = `${parts.year}-${parts.month}-${parts.day}`;
+    if (parts.weekday !== "Thu" || Number(parts.hour) !== 19 || summaryWeek === day) return;
+    summaryWeek = day;
+    const since = new Date(Date.now() - 7 * 86400000).toISOString();
+    const orders = listOrdersSince(since);
+    const ok = await sendWeeklySummary(orders, `${BASE_URL}/admin`);
+    console.log(`[summary] ${orders.length} order(s) -> ${ok ? "sent" : "skipped"}`);
+  } catch (err) {
+    console.error("[summary] failed:", err.message);
   }
 }, 30 * 60 * 1000).unref();
 
