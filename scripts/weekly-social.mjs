@@ -48,7 +48,8 @@ const PROCESS = [
   { head: "Cut by hand,<br/><em>drained in cloth.</em>", body: "No starch, no gums, no shortcut that would make it faster." },
   { head: "Brined,<br/><em>never pressed.</em>", body: "Halloumi keeps its squeak because nothing squeezes it flat." },
   { head: "Churned from<br/><em>cultured cream.</em>", body: "Butter that tastes of something, because the cream was cultured first." },
-  { head: "Strained for<br/><em>eighteen hours.</em>", body: "Labneh is yogurt that gave up its whey — thick enough to spread." }
+  { head: "Strained for<br/><em>eighteen hours.</em>", body: "Labneh is yogurt that gave up its whey — thick enough to spread." },
+  { head: "What is left<br/><em>after churning.</em>", body: "Real buttermilk is the cultured liquid that stays behind when cream becomes butter." }
 ];
 
 async function loadStore() {
@@ -60,6 +61,7 @@ async function loadStore() {
 function processFor(product, week) {
   const n = `${product.name} ${(product.tags || []).join(" ")}`.toLowerCase();
   if (n.includes("halloumi")) return PROCESS[2];
+  if (n.includes("buttermilk")) return PROCESS[5];
   if (n.includes("butter")) return PROCESS[3];
   if (n.includes("labneh")) return PROCESS[4];
   if (n.includes("yogurt") || n.includes("yoghurt")) return PROCESS[0];
