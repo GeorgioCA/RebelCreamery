@@ -5,15 +5,16 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { site, delivery, money, artOptions } from "./lib/catalog.js";
+import { site, delivery, money, artOptions, applySettings } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary,
-  releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku
+  releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku,
+  getSettings, saveSettings
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
-  renderProductForm, renderLogin, renderOrderAdmin, render404
+  renderProductForm, renderLogin, renderOrderAdmin, renderSettings, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
 import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, sendWeeklySummary, mailConfigured, mailFrom } from "./lib/mail.js";
@@ -28,7 +29,8 @@ const baseFor = (req) => BASE_URL || `${req.protocol}://${req.get("host")}`;
 const DEMO = process.env.DEMO_MODE === "1";
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || "";
 const stripe = STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
-const ETRANSFER_EMAIL = process.env.ETRANSFER_EMAIL || site.email;
+// Stored settings override the environment defaults for the life of the process.
+applySettings(getSettings());
 const ART_IDS = artOptions.map((a) => a.id);
 const PRINT_TOKEN = process.env.PRINT_TOKEN || "";
 // One cap for both the per-product form and the cart total, so an admin can never
@@ -466,6 +468,49 @@ app.get("/admin/login", (req, res) => {
   res.send(renderLogin({ next: next.startsWith("/admin") ? next : "/admin" }));
 });
 
+
+app.get("/admin/settings", adminAuth, (req, res) => {
+  res.send(renderSettings({ saved: req.query.saved === "1", error: req.query.error || "" }));
+});
+
+app.post("/admin/settings", adminAuth, (req, res) => {
+  const b = req.body || {};
+  const val = (k) => String(b[k] ?? "").trim();
+  const cents = (k) => Math.round(Number(val(k) || 0) * 100);
+  const bad = (msg) => res.redirect(`/admin/settings?error=${encodeURIComponent(msg)}`);
+
+  if (!val("site_name")) return bad("The shop needs a name.");
+  if (!val("pickup_location")) return bad("Pickup address is required.");
+  if (!val("pickup_window")) return bad("Pickup window is required.");
+  for (const k of ["contact_email", "etransfer_email"]) {
+    const v = val(k);
+    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return bad("That email address does not look right.");
+  }
+  for (const k of ["delivery_fee", "free_delivery_over"]) {
+    const n = Number(val(k) || 0);
+    if (!Number.isFinite(n) || n < 0) return bad("Delivery amounts must be zero or more.");
+  }
+
+  saveSettings({
+    site_name: val("site_name"),
+    site_tagline: val("site_tagline"),
+    contact_email: val("contact_email"),
+    contact_phone: val("contact_phone"),
+    instagram: val("instagram"),
+    pickup_location: val("pickup_location"),
+    pickup_window: val("pickup_window"),
+    cutoff_text: val("cutoff_text"),
+    delivery_area: val("delivery_area"),
+    delivery_windows: val("delivery_windows"),
+    delivery_fee_cents: cents("delivery_fee"),
+    free_delivery_over_cents: cents("free_delivery_over"),
+    etransfer_email: val("etransfer_email"),
+    licence_text: val("licence_text")
+  });
+  applySettings(getSettings());
+  res.redirect("/admin/settings?saved=1");
+});
+
 app.post("/admin/login", (req, res) => {
   const next = String(req.body.next || "/admin");
   const target = next.startsWith("/admin") ? next : "/admin";
@@ -789,7 +834,7 @@ setInterval(async () => {
 app.listen(PORT, () => {
   console.log(`${site.name} on ${BASE_URL || "(request origin)"} (port ${PORT})`);
   console.log(`  stripe: ${stripe ? "live keys" : DEMO ? "DEMO mode (simulated)" : "not configured"}`);
-  console.log(`  e-transfer: ${ETRANSFER_EMAIL}`);
+  console.log(`  e-transfer: ${site.etransferEmail}`);
   console.log(`  email: ${mailConfigured() ? `Resend via ${mailFrom()}` : "off (no RESEND_API_KEY)"}`);
   console.log(`  products: ${listProducts().length}`);
 });
