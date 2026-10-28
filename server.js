@@ -633,7 +633,9 @@ app.get("/admin", adminAuth, (req, res) => {
   const filters = {
     q: String(req.query.q || "").slice(0, 60),
     status: String(req.query.status || ""),
-    method: String(req.query.method || "")
+    method: String(req.query.method || ""),
+    sort: String(req.query.sort || "created"),
+    dir: req.query.dir === "asc" ? "asc" : "desc"
   };
   const total = countOrdersFiltered(filters);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
