@@ -489,3 +489,8 @@ table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860p
 .orders td:last-child{white-space:nowrap}
 
 .sku{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;letter-spacing:.04em;color:var(--ink-soft);white-space:nowrap}
+
+/* Order book: search + filters */
+.order-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:18px 0 14px}
+.order-filter input[type=search]{flex:1 1 260px;min-width:200px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;color:inherit}
+.order-filter select{padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;color:inherit}

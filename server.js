@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { site, delivery, money, artOptions, applySettings } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
-  finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listProducts, markPaid, printQueueSummary,
+  finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listOrdersFiltered, listProducts, markPaid, printQueueSummary,
+  countOrdersFiltered,
   releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku,
   getSettings, saveSettings
 } from "./lib/db.js";
@@ -551,13 +552,19 @@ app.post("/admin/logout", (_req, res) => {
 const PAGE_SIZE = 100;
 
 app.get("/admin", adminAuth, (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const total = countOrders();
+  const filters = {
+    q: String(req.query.q || "").slice(0, 60),
+    status: String(req.query.status || ""),
+    method: String(req.query.method || "")
+  };
+  const total = countOrdersFiltered(filters);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const page = Math.min(Math.max(1, parseInt(req.query.page, 10) || 1), pageCount);
   res.send(renderAdmin({
-    orders: listOrders(PAGE_SIZE, (page - 1) * PAGE_SIZE), summary: salesSummary(), products: listProducts(),
+    orders: listOrdersFiltered({ ...filters, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    summary: salesSummary(), products: listProducts(),
     printQueue: printQueueSummary(), queued: req.query.queued === "1", madeToOrder: MADE_TO_ORDER,
-    pager: { page, pageCount, total }
+    pager: { page, pageCount, total }, filters
   }));
 });
 
