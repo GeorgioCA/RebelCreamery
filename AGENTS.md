@@ -110,3 +110,16 @@ No test runner in CI. Verify changes with the preview server plus a Playwright s
 - Label type size is one knob in each renderer: `TEXT_SCALE` in `print-agent/labelprint.py` and `--ts` in `lib/labels.js`. Change both or the browser and printed labels drift apart.
 - The yogurt illustration shows `{{FAT}}`, filled from the product name or tags (`artFor`). Don't hardcode a percentage into the SVG.
 - WhatsApp/SMS do not exist. Email is the only outbound channel.
+
+## Discount codes
+
+Codes live in the `discounts` table (code, kind `percent|fixed`, value, min subtotal, max uses, uses, expires_at, active).
+`evaluateDiscount()` in `lib/discounts.js` is the only place that decides whether a code is usable — the preview endpoint
+(`GET /api/discount?code=&subtotal=`) and order creation both call it, so they cannot disagree. The checkout is
+all-or-nothing: a code that does not apply returns 400 instead of silently charging full price.
+
+Order rows snapshot `discount_cents` and `discount_code`; line prices are never mutated. Uses are incremented when an
+order is created for e-Transfer and only when payment succeeds for card, so abandoned Stripe checkouts do not burn a use.
+
+Stripe needs a coupon object for a discount, so a one-shot `amount_off` coupon is created per checkout and passed as
+`discounts: [{ coupon }]`.

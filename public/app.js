@@ -159,6 +159,12 @@
     const delRow = document.getElementById("sum-delivery-row");
     const delEl = document.getElementById("sum-delivery");
     const totEl = document.getElementById("sum-total");
+    const discInput = document.getElementById("discount-code");
+    const discBtn = document.getElementById("discount-apply");
+    const discMsg = document.getElementById("discount-msg");
+    const discRow = document.getElementById("sum-discount-row");
+    const discEl = document.getElementById("sum-discount");
+    let disc = { code: "", amountCents: 0 };
     const feeLabel = document.getElementById("delivery-fee-label");
     const addressField = document.getElementById("address-field");
     const errorEl = document.getElementById("form-error");
@@ -184,15 +190,68 @@
         submit.disabled = false;
       }
 
+      const d = Math.min(disc.amountCents, s);
       subEl.textContent = money(s);
       delRow.hidden = !fee;
       delEl.textContent = money(fee);
-      totEl.textContent = money(s + fee);
+      discRow.hidden = !d;
+      if (discEl) discEl.textContent = "−" + money(d);
+      const discLabel = document.getElementById("sum-discount-label");
+      if (discLabel) discLabel.textContent = disc.code ? `Discount · ${disc.code}` : "Discount";
+      totEl.textContent = money(Math.max(0, s - d + fee));
       if (feeLabel) feeLabel.textContent = money(DELIVERY.feeCents);
       addressField.hidden = method !== "delivery";
     }
 
-    form.addEventListener("change", paint);
+    async function applyCode() {
+      if (disc.code) {           // second press removes the code
+        disc = { code: "", amountCents: 0 };
+        if (discInput) { discInput.value = ""; discInput.readOnly = false; }
+        if (discBtn) { discBtn.textContent = "Apply"; discBtn.classList.remove("ghost"); }
+        if (discMsg) { discMsg.textContent = ""; discMsg.className = "discount-msg"; }
+        paint();
+        return;
+      }
+      const code = (discInput?.value || "").trim();
+      if (!code) {
+        disc = { code: "", amountCents: 0 };
+        if (discMsg) discMsg.textContent = "";
+        paint();
+        return;
+      }
+      const s = subtotal(clean(read()));
+      try {
+        const r = await fetch(`/api/discount?code=${encodeURIComponent(code)}&subtotal=${s}`).then((x) => x.json());
+        if (r.ok) {
+          disc = { code: r.code, amountCents: r.amountCents };
+          if (discMsg) { discMsg.textContent = `${r.label} applied`; discMsg.className = "discount-msg ok"; }
+          // Applied state: the input locks and the button becomes the way out.
+          if (discInput) discInput.readOnly = true;
+          if (discBtn) { discBtn.textContent = "Remove"; discBtn.classList.add("ghost"); }
+        } else {
+          disc = { code: "", amountCents: 0 };
+          if (discInput) discInput.readOnly = false;
+          if (discBtn) discBtn.textContent = "Apply";
+          if (discMsg) { discMsg.textContent = r.error || "That code didn't work."; discMsg.className = "discount-msg bad"; }
+        }
+      } catch {
+        if (discMsg) { discMsg.textContent = "Could not check that code."; discMsg.className = "discount-msg bad"; }
+      }
+      paint();
+    }
+    discBtn?.addEventListener("click", applyCode);
+    discInput?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyCode(); } });
+
+    // Cart or fulfilment changes can invalidate a code (e.g. minimum spend).
+    async function revalidate() {
+      if (!disc.code) return;
+      const code = disc.code;
+      disc = { code: "", amountCents: 0 };
+      if (discInput) { discInput.readOnly = false; discInput.value = code; }
+      if (discBtn) discBtn.textContent = "Apply";
+      await applyCode();
+    }
+    form.addEventListener("change", () => { paint(); revalidate(); });
     document.addEventListener("cart:change", paint);
     paint();
 
@@ -311,7 +370,8 @@
             province: data.get("province"),
             postal: data.get("postal"),
             notes: data.get("notes"),
-            payment: data.get("payment")
+            payment: data.get("payment"),
+            code: disc.code
           })
         });
         const out = await res.json().catch(() => ({}));

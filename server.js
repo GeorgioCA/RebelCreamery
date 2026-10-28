@@ -11,13 +11,14 @@ import {
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listOrdersFiltered, listProducts, markPaid, printQueueSummary,
   countOrdersFiltered,
   releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku,
-  getSettings, saveSettings
+  getSettings, saveSettings, listDiscounts, saveDiscount, setDiscountActive, deleteDiscount, useDiscount
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
-  renderProductForm, renderLogin, renderOrderAdmin, renderSettings, render404
+  renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
+import { evaluateDiscount } from "./lib/discounts.js";
 import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, sendWeeklySummary, mailConfigured, mailFrom } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -79,6 +80,7 @@ app.post(
       const order = markPaid(session.id, session.client_reference_id);
       if (order) {
         console.log(`paid: ${order.number}`);
+        if (order.discount_code) useDiscount(order.discount_code);
         sendOrderConfirmation(order, `${baseFor(req)}/order/${order.token}`);
         sendOwnerOrderAlert(order, `${baseFor(req)}/admin/orders/${order.number}`);
       }
@@ -236,7 +238,7 @@ app.post("/api/checkout", async (req, res) => {
   try {
     if (limited(req.ip)) return res.status(429).json({ error: "Too many attempts. Try again in a minute." });
 
-    const { items = [], name = "", email = "", phone = "", method = "pickup", address = "", unit = "", street = "", city = "", province = "", postal = "", notes = "", payment = "card" } = req.body || {};
+    const { items = [], name = "", email = "", phone = "", method = "pickup", address = "", unit = "", street = "", city = "", province = "", postal = "", notes = "", payment = "card", code = "" } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Your cart is empty." });
     if (!name.trim() || name.trim().length < 2) return res.status(400).json({ error: "Please enter your name." });
@@ -284,15 +286,23 @@ app.post("/api/checkout", async (req, res) => {
     if (wanted > MAX_ITEMS_PER_ORDER) return res.status(400).json({ error: "That's a lot of dairy — email us for a bulk order." });
 
     const subtotalCents = lines.reduce((s, l) => s + l.priceCents * l.qty, 0);
+    // A code is all-or-nothing: if it doesn't apply, say so rather than quietly charging full price.
+    let discount = { ok: false };
+    if (String(code || "").trim()) {
+      discount = evaluateDiscount(code, subtotalCents);
+      if (!discount.ok) return res.status(400).json({ error: discount.error });
+    }
+    const discountCents = discount.ok ? discount.amountCents : 0;
     const deliveryCents = method === "delivery" && subtotalCents < delivery.freeOverCents ? delivery.feeCents : 0;
-    const totalCents = subtotalCents + deliveryCents;
-    const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: deliveryAddress, notes: notes.trim(), items: lines, subtotalCents, deliveryCents, totalCents };
+    const totalCents = Math.max(0, subtotalCents - discountCents + deliveryCents);
+    const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: deliveryAddress, notes: notes.trim(), items: lines, subtotalCents, deliveryCents, totalCents, discountCents, discountCode: discount.ok ? discount.code : "" };
 
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {
       const { number, token } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
       if (!MADE_TO_ORDER) reserveStock(lines);
       const link = `${baseFor(req)}/order/${token}`;
+      if (discount.ok) useDiscount(discount.code);
       const etransferOrder = getOrder(number);
       sendOrderConfirmation(etransferOrder, link);
       sendOwnerOrderAlert(etransferOrder, `${baseFor(req)}/admin/orders/${number}`);
@@ -304,6 +314,7 @@ app.post("/api/checkout", async (req, res) => {
       if (!DEMO) return res.status(503).json({ error: "Card payments are not configured yet. Choose e-Transfer, or add Stripe keys." });
       const { number, token } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
       if (!MADE_TO_ORDER) reserveStock(lines);
+      if (discount.ok) useDiscount(discount.code);
       const demoOrder = getOrder(number);
       sendOrderConfirmation(demoOrder, `${baseFor(req)}/order/${token}`);
       sendOwnerOrderAlert(demoOrder, `${baseFor(req)}/admin/orders/${number}`);
@@ -314,8 +325,21 @@ app.post("/api/checkout", async (req, res) => {
     pendingOrder = number;
     if (!MADE_TO_ORDER) reserveStock(lines);
 
+    // Stripe needs a coupon object; create a one-shot one for this order.
+    let couponId = null;
+    if (discountCents > 0) {
+      const coupon = await stripe.coupons.create({
+        amount_off: discountCents,
+        currency: "cad",
+        duration: "once",
+        name: discount.code
+      });
+      couponId = coupon.id;
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      discounts: couponId ? [{ coupon: couponId }] : undefined,
       locale: "auto", // Stripe has no en-CA; auto follows the browser and falls back to English
       customer_email: email.trim(),
       client_reference_id: number,
@@ -485,6 +509,60 @@ app.get("/api/store.json", (_req, res) => {
       note: p.note, tags: p.tags, art: p.art
     }))
   });
+});
+
+
+app.get("/api/discount", (req, res) => {
+  if (limited(`disc:${req.ip}`, 30, 60_000)) return res.status(429).json({ ok: false, error: "Too many attempts. Wait a minute." });
+  const subtotal = Math.max(0, Math.round(Number(req.query.subtotal) || 0));
+  const r = evaluateDiscount(req.query.code, subtotal);
+  res.json(r.ok
+    ? { ok: true, code: r.code, amountCents: r.amountCents, label: r.label }
+    : { ok: false, error: r.error });
+});
+
+app.get("/admin/discounts", adminAuth, (req, res) => {
+  res.send(renderDiscounts({
+    discounts: listDiscounts(),
+    saved: req.query.saved === "1",
+    error: String(req.query.error || "")
+  }));
+});
+
+app.post("/admin/discounts", adminAuth, (req, res) => {
+  const b = req.body || {};
+  const kind = b.kind === "fixed" ? "fixed" : "percent";
+  const raw = Number(String(b.value || "").replace(/[^0-9.]/g, ""));
+  const value = kind === "fixed" ? Math.round(raw * 100) : Math.round(raw);
+  if (!String(b.code || "").trim()) return res.redirect("/admin/discounts?error=" + encodeURIComponent("A code is required."));
+  if (!Number.isFinite(value) || value <= 0) return res.redirect("/admin/discounts?error=" + encodeURIComponent("Enter a value above zero."));
+  if (kind === "percent" && value > 100) return res.redirect("/admin/discounts?error=" + encodeURIComponent("A percentage can't exceed 100."));
+  const expires = String(b.expires || "").trim();
+  try {
+    saveDiscount({
+      code: b.code,
+      kind,
+      value,
+      minSubtotalCents: Math.round((Number(b.min) || 0) * 100),
+      maxUses: b.max_uses ? Number(b.max_uses) : null,
+      expiresAt: expires ? new Date(`${expires}T23:59:59`).toISOString() : null,
+      active: true
+    });
+  } catch (err) {
+    return res.redirect("/admin/discounts?error=" + encodeURIComponent(err.message));
+  }
+  res.redirect("/admin/discounts?saved=1");
+});
+
+app.post("/admin/discounts/:code/toggle", adminAuth, (req, res) => {
+  const d = listDiscounts().find((x) => x.code === String(req.params.code).toUpperCase());
+  if (d) setDiscountActive(d.code, !d.active);
+  res.redirect("/admin/discounts?saved=1");
+});
+
+app.post("/admin/discounts/:code/delete", adminAuth, (req, res) => {
+  deleteDiscount(req.params.code);
+  res.redirect("/admin/discounts?saved=1");
 });
 
 app.get("/admin/settings", adminAuth, (req, res) => {

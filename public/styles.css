@@ -496,3 +496,13 @@ table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860p
 .order-filter select{flex:0 0 auto;min-width:150px;max-width:190px;padding:8px 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;font-size:14px;color:inherit}
 .order-filter .btn,.order-filter .link-arrow{flex:0 0 auto;white-space:nowrap}
 @media (max-width:640px){.order-filter{flex-wrap:wrap}.order-filter select{max-width:none;flex:1 1 44%}}
+
+/* Checkout: discount code */
+.discount-box{margin:14px 0 4px;padding-top:14px;border-top:1px solid var(--line)}
+.discount-box label{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px}
+.discount-row{display:flex;gap:8px}
+.discount-row input{flex:1 1 auto;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;font-size:14px;text-transform:uppercase}
+.discount-row .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.discount-msg{margin:8px 0 0;font-size:13px;min-height:1em}
+.discount-msg.ok{color:#2f6b3f}
+.discount-msg.bad{color:var(--clay)}
