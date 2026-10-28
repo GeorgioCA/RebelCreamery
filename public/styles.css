@@ -529,3 +529,8 @@ th[aria-sort] .th-sort{color:var(--ink)}
 /* Settings: backups panel */
 .backup-panel{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;
   border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:18px 0 22px;background:var(--paper)}
+
+/* Restore screen */
+.restore-form{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+.restore-form input{width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;font-size:13px}
+.restore-log{margin:8px 0 0;padding-left:18px}

@@ -10,6 +10,23 @@ They are kept for 30 days. A copy of the last few nights also sits in the app vo
 This procedure was tested on 2026-10-28: the snapshot downloaded from B2 passed `PRAGMA integrity_check`, booted the
 app against a clean data directory, and served all 8 orders and 12 products.
 
+
+## From the admin panel
+
+Settings → Backups → **Restore from a backup →** lists every snapshot in the bucket, newest first.
+
+1. Type the snapshot's date into the confirm box (the button refuses to fire otherwise)
+2. Press **Restore**
+
+The store downloads the snapshot, runs `PRAGMA integrity_check` against it, reports the order and product counts,
+then stages it and exits. Docker's `unless-stopped` policy brings the container straight back up, and the swap
+happens before the database is opened — so the live process never has the file pulled out from under it.
+
+The data being replaced is kept on the volume as `store.db.pre-restore-<timestamp>`. If a snapshot fails its
+integrity check the app keeps running on the current data and logs the failure to `/data/restore.log`.
+
+The command-line procedure below still applies when the panel itself is down.
+
 ## 1. Get the snapshot
 
 **From the B2 web console** — Buckets → `EComStore` → `rebel-creamery/db/` → pick a date → Download.

@@ -5,6 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+
+const DATA_DIR = process.env.DATA_DIR || "./data";
 import { site, delivery, money, artOptions, applySettings, priceOf } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
@@ -15,11 +17,12 @@ import {
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
-  renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, render404
+  renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, renderRestore, render404
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
 import { evaluateDiscount } from "./lib/discounts.js";
-import { runBackup, backupEnabled, lastBackup } from "./lib/backup.js";
+import { runBackup, backupEnabled, lastBackup, listBackups, fetchBackup } from "./lib/backup.js";
+import { stageRestore, restoreLog } from "./lib/restore.js";
 import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, sendWeeklySummary, mailConfigured, mailFrom } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -570,6 +573,62 @@ app.post("/admin/backup", adminAuth, async (req, res) => {
   const out = await runBackup({ manual: true });
   console.log(`[backup] manual: ${out.ok ? "ok" : "FAILED"} ${out.files?.length || 0} file(s)${out.error ? " — " + out.error : ""}`);
   res.redirect(`/admin/settings?${out.ok ? "backed=1" : "backup_error=" + encodeURIComponent(out.error || "failed")}`);
+});
+
+app.get("/admin/restore", adminAuth, async (req, res) => {
+  let backups = [];
+  let error = "";
+  if (backupEnabled()) {
+    try { backups = await listBackups(); } catch (err) { error = `Could not list snapshots: ${err.message}`; }
+  }
+  res.send(renderRestore({ backups, error, log: restoreLog(), restoreOn: backupEnabled() }));
+});
+
+app.post("/admin/restore", adminAuth, async (req, res) => {
+  const file = String(req.body?.file || "");
+  const confirm = String(req.body?.confirm || "").trim();
+  const day = (file.match(/\d{4}-\d{2}-\d{2}/) || [])[0];
+
+  const fail = async (msg) => {
+    let backups = [];
+    try { backups = await listBackups(); } catch { /* already failing; show what we can */ }
+    res.status(400).send(renderRestore({ backups, error: msg, log: restoreLog(), restoreOn: backupEnabled() }));
+  };
+
+  if (!backupEnabled()) return fail("Backblaze isn't configured.");
+  if (!day || !new RegExp(`^${(process.env.B2_PREFIX || "rebel-creamery").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/db/${day}\\.sqlite$`).test(file)) {
+    return fail("That snapshot name isn't valid.");
+  }
+  if (confirm !== day) return fail(`Type ${day} exactly to confirm.`);
+
+  try {
+    const { snapshot, uploads } = await fetchBackup(file);
+    const tmpSnapshot = path.join(DATA_DIR, "restore-download.sqlite");
+    fs.writeFileSync(tmpSnapshot, snapshot);
+    let tmpUploads = null;
+    if (uploads) {
+      tmpUploads = path.join(DATA_DIR, "restore-download.tgz");
+      fs.writeFileSync(tmpUploads, uploads);
+    }
+    const counts = stageRestore({ snapshotPath: tmpSnapshot, uploadsPath: tmpUploads, file });
+    fs.rmSync(tmpSnapshot, { force: true });
+    if (tmpUploads) fs.rmSync(tmpUploads, { force: true });
+
+    console.log(`[restore] staged ${file} (${counts.orders} orders, ${counts.products} products) — restarting`);
+    res.send(`<!doctype html><html><head><meta charset="utf-8"/><meta http-equiv="refresh" content="25;url=/admin"/>
+      <title>Restoring — ${site.name}</title>
+      <style>body{font:16px/1.6 system-ui;background:#fbf7ef;color:#1d2a21;display:grid;place-items:center;height:100vh;margin:0}
+      main{max-width:34rem;padding:2rem}code{background:#efe9dc;padding:2px 6px;border-radius:4px}</style></head>
+      <body><main><h1>Restoring from ${day}</h1>
+      <p>The snapshot passed its integrity check: <strong>${counts.orders} orders, ${counts.products} products</strong>.</p>
+      <p>The app is restarting to swap the database. This page returns to the order book in about 25 seconds.</p>
+      <p class="muted">Your previous data is kept on the volume as <code>store.db.pre-restore-…</code>.</p>
+      </main></body></html>`);
+    setTimeout(() => { console.log("[restore] exiting to apply snapshot"); process.exit(0); }, 2000);
+  } catch (err) {
+    console.error(`[restore] failed: ${err.message}`);
+    return fail(`Restore failed: ${err.message}`);
+  }
 });
 
 app.get("/admin/settings", adminAuth, (req, res) => {
