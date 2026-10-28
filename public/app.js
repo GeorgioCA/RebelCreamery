@@ -3,6 +3,8 @@
   const CATALOG = window.__CATALOG__ || [];
   const DELIVERY = window.__DELIVERY__ || { feeCents: 800, freeOverCents: 4000 };
   const KEY = "rc_cart_v1";
+  // Sale price wins when it is set and lower than the regular price.
+  const priceOf = (p) => (p && p.saleCents && p.saleCents < p.priceCents ? p.saleCents : (p ? p.priceCents : 0));
   const byId = Object.fromEntries(CATALOG.map((p) => [p.id, p]));
   const money = (c) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(c / 100);
   const esc = (s = "") =>
@@ -21,7 +23,7 @@
   }
   const count = (cart) => Object.values(cart).reduce((a, b) => a + b, 0);
   const subtotal = (cart) =>
-    Object.entries(cart).reduce((s, [id, q]) => s + (byId[id]?.priceCents || 0) * q, 0);
+    Object.entries(cart).reduce((s, [id, q]) => s + priceOf(byId[id]) * q, 0);
   const clean = (cart) =>
     Object.fromEntries(Object.entries(cart).filter(([id, q]) => byId[id] && q > 0).map(([id, q]) => [id, Math.min(q, byId[id].max)]));
 
@@ -88,9 +90,9 @@
       return `<div class="cart-item" data-id="${esc(id)}">
         <div>
           <h3>${esc(p.name)}</h3>
-          <span class="meta">${esc(p.weight)} · ${money(p.priceCents)}</span>
+          <span class="meta">${esc(p.weight)} · ${money(priceOf(p))}${p.saleCents && p.saleCents < p.priceCents ? " sale" : ""}</span>
         </div>
-        <span class="line-total">${money(p.priceCents * q)}</span>
+        <span class="line-total">${money(priceOf(p) * q)}</span>
         <div class="stepper">
           <button type="button" data-cart-step="-1" data-id="${esc(id)}" aria-label="Decrease ${esc(p.name)}">−</button>
           <input type="number" value="${q}" min="0" max="${p.max}" data-cart-qty data-id="${esc(id)}" aria-label="${esc(p.name)} quantity"/>
@@ -185,7 +187,7 @@
       } else {
         itemsEl.innerHTML = `<ul class="sum-items">${Object.entries(cart).map(([id, q]) => {
           const p = byId[id];
-          return `<li><span>${esc(p.name)} ${esc(p.weight)} <span class="q">× ${q}</span></span><span>${money(p.priceCents * q)}</span></li>`;
+          return `<li><span>${esc(p.name)} ${esc(p.weight)} <span class="q">× ${q}</span></span><span>${money(priceOf(p) * q)}</span></li>`;
         }).join("")}</ul>`;
         submit.disabled = false;
       }

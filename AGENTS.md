@@ -123,3 +123,11 @@ order is created for e-Transfer and only when payment succeeds for card, so aban
 
 Stripe needs a coupon object for a discount, so a one-shot `amount_off` coupon is created per checkout and passed as
 `discounts: [{ coupon }]`.
+
+## Sale prices
+
+`products.sale_cents` holds an optional sale price; `price_cents` stays the regular price. `priceOf(p)` in
+`lib/catalog.js` is the single source of truth for what a customer pays, and it is used at checkout, in
+`/api/store.json`, and mirrored in `public/app.js`. Cards render the regular price struck through next to the
+sale price; the admin product form rejects a sale price that is not below the regular price. Order lines
+snapshot the charged price, so ending a sale never rewrites history.

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { site, delivery, money, artOptions, applySettings } from "./lib/catalog.js";
+import { site, delivery, money, artOptions, applySettings, priceOf } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listOrdersFiltered, listProducts, markPaid, printQueueSummary,
@@ -271,7 +271,7 @@ app.post("/api/checkout", async (req, res) => {
       const qty = Number(raw?.qty);
       if (!p) return res.status(400).json({ error: "That product is no longer available." });
       if (!Number.isInteger(qty) || qty < 1 || qty > p.maxPerOrder) return res.status(400).json({ error: `Invalid quantity for ${p.name}.` });
-      lines.push({ id: p.id, sku: p.sku, name: `${p.name} ${p.weight}`.trim(), priceCents: p.priceCents, qty });
+      lines.push({ id: p.id, sku: p.sku, name: `${p.name} ${p.weight}`.trim(), priceCents: priceOf(p), qty });
     }
 
     const wanted = lines.reduce((acc, l) => acc + l.qty, 0);
@@ -505,7 +505,7 @@ app.get("/api/store.json", (_req, res) => {
     },
     delivery,
     products: listProducts({ activeOnly: true }).map((p) => ({
-      id: p.id, sku: p.sku, name: p.name, weight: p.weight, priceCents: p.priceCents,
+      id: p.id, sku: p.sku, name: p.name, weight: p.weight, priceCents: priceOf(p), saleCents: p.saleCents || null, regularCents: p.priceCents,
       note: p.note, tags: p.tags, art: p.art
     }))
   });
@@ -649,13 +649,14 @@ app.get("/admin", adminAuth, (req, res) => {
 });
 
 app.get("/admin/products.csv", adminAuth, (req, res) => {
-  const rows = [["sku", "name", "weight", "price_cad", "stock", "status", "sort"]];
+  const rows = [["sku", "name", "weight", "price_cad", "sale_cad", "stock", "status", "sort"]];
   for (const p of listProducts()) {
     rows.push([
       p.sku || "",
       p.name,
       p.weight,
       (p.priceCents / 100).toFixed(2),
+      p.saleCents ? (p.saleCents / 100).toFixed(2) : "",
       String(p.stock ?? 0),
       p.soldOut ? "sold out" : p.active ? "live" : "hidden",
       String(p.sortOrder ?? "")
@@ -683,12 +684,15 @@ app.get("/admin/products/:id", adminAuth, (req, res) => {
 
 function parseProductBody(body) {
   const cents = Math.round(Number(String(body.price || "").replace(/[^0-9.]/g, "")) * 100);
+  const saleRaw = String(body.sale || "").trim();
+  const saleCents = saleRaw ? Math.round(Number(saleRaw.replace(/[^0-9.]/g, "")) * 100) : null;
   return {
     id: body.id || "",
     sku: String(body.sku || "").toUpperCase().replace(/[^A-Z0-9._-]/g, "").slice(0, 24),
     name: String(body.name || "").trim(),
     weight: String(body.weight || "").trim(),
     priceCents: Number.isFinite(cents) ? Math.max(0, cents) : NaN,
+    saleCents: saleCents === null ? null : Number.isFinite(saleCents) ? Math.max(0, saleCents) : NaN,
     note: String(body.note || "").trim(),
     tags: String(body.tags || "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 8),
     art: ART_IDS.includes(body.art) ? body.art : "generic",
@@ -723,6 +727,8 @@ app.post("/admin/products", adminAuth, (req, res) => {
     }
     if (!draft.name) return res.status(400).send(renderProductForm({ product: draft, error: "Give the product a name." }));
     if (!Number.isFinite(draft.priceCents)) return res.status(400).send(renderProductForm({ product: draft, error: "Enter a price in dollars, e.g. 4.49." }));
+    if (draft.saleCents !== null && !Number.isFinite(draft.saleCents)) return res.status(400).send(renderProductForm({ product: draft, error: "Enter the sale price in dollars, or leave it blank." }));
+    if (draft.saleCents !== null && draft.saleCents >= draft.priceCents) return res.status(400).send(renderProductForm({ product: draft, error: "The sale price must be below the regular price." }));
 
     if (req.file) {
       draft.image = req.file.filename;
