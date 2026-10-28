@@ -145,5 +145,4 @@ and can be triggered by hand from **Settings → Backups**. Each run:
 The key is bucket-scoped and cannot list buckets, so `B2_BUCKET_ID` is required (bucket `EComStore`).
 Status of the last run is shown on the Settings page and stored in `data/backups/last.json`.
 
-**Restore:** stop the app, copy the snapshot into the volume as `/data/store.db`, delete `/data/store.db-wal`
-and `/data/store.db-shm`, extract `uploads.tgz` into `/data`, start the app, then check the order count on `/admin`.
+**Restore:** see `docs/RESTORE.md` — tested end to end (download → integrity check → boot → order count).
