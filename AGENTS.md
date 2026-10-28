@@ -131,3 +131,19 @@ Stripe needs a coupon object for a discount, so a one-shot `amount_off` coupon i
 `/api/store.json`, and mirrored in `public/app.js`. Cards render the regular price struck through next to the
 sale price; the admin product form rejects a sale price that is not below the regular price. Order lines
 snapshot the charged price, so ending a sale never rewrites history.
+
+## Backups
+
+`lib/backup.js` runs nightly at 3 am mountain (in-process scheduler, date-guarded so a redeploy cannot double-run)
+and can be triggered by hand from **Settings → Backups**. Each run:
+
+- snapshots SQLite with `VACUUM INTO` (`data/backups/<day>.sqlite`) — never a plain `cp`, which can miss committed WAL data
+- tars `uploads/` when it has files
+- uploads both to B2 under `rebel-creamery/db/<day>.sqlite` and `rebel-creamery/uploads/<day>.tgz`
+- prunes objects and local snapshots older than `BACKUP_RETENTION_DAYS` (30)
+
+The key is bucket-scoped and cannot list buckets, so `B2_BUCKET_ID` is required (bucket `EComStore`).
+Status of the last run is shown on the Settings page and stored in `data/backups/last.json`.
+
+**Restore:** stop the app, copy the snapshot into the volume as `/data/store.db`, delete `/data/store.db-wal`
+and `/data/store.db-shm`, extract `uploads.tgz` into `/data`, start the app, then check the order count on `/admin`.
