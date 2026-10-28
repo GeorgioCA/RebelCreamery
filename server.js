@@ -19,6 +19,7 @@ import {
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
 import { evaluateDiscount } from "./lib/discounts.js";
+import { runBackup, backupEnabled, lastBackup } from "./lib/backup.js";
 import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, sendWeeklySummary, mailConfigured, mailFrom } from "./lib/mail.js";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -565,8 +566,21 @@ app.post("/admin/discounts/:code/delete", adminAuth, (req, res) => {
   res.redirect("/admin/discounts?saved=1");
 });
 
+app.post("/admin/backup", adminAuth, async (req, res) => {
+  const out = await runBackup({ manual: true });
+  console.log(`[backup] manual: ${out.ok ? "ok" : "FAILED"} ${out.files?.length || 0} file(s)${out.error ? " — " + out.error : ""}`);
+  res.redirect(`/admin/settings?${out.ok ? "backed=1" : "backup_error=" + encodeURIComponent(out.error || "failed")}`);
+});
+
 app.get("/admin/settings", adminAuth, (req, res) => {
-  res.send(renderSettings({ saved: req.query.saved === "1", error: req.query.error || "" }));
+  res.send(renderSettings({
+    saved: req.query.saved === "1",
+    error: req.query.error || "",
+    backed: req.query.backed === "1",
+    backupError: req.query.backup_error || "",
+    backup: lastBackup(),
+    backupOn: backupEnabled()
+  }));
 });
 
 app.post("/admin/settings", adminAuth, (req, res) => {
@@ -895,6 +909,27 @@ function sweepPendingOrders() {
 }
 sweepPendingOrders();
 setInterval(sweepPendingOrders, 30 * 60_000).unref();
+
+/* Nightly database + photos backup to B2, 3 am mountain. Guarded by the local
+   date so a redeploy at 3 am cannot double-run it.                            */
+let backupDay = "";
+setInterval(async () => {
+  if (!backupEnabled()) return;
+  try {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Edmonton", hour: "2-digit", hour12: false, year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(now).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+    const day = `${parts.year}-${parts.month}-${parts.day}`;
+    if (Number(parts.hour) !== 3 || backupDay === day) return;
+    backupDay = day;
+    const out = await runBackup();
+    console.log(`[backup] ${out.ok ? "ok" : "FAILED"}: ${out.files.join(", ") || out.error}`);
+  } catch (err) {
+    console.log(`[backup] error: ${err.message}`);
+  }
+}, 15 * 60_000).unref();
+
 
 
 /* e-Transfers arrive with no signal — Koho (like every consumer account) has no

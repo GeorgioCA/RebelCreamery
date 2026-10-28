@@ -525,3 +525,7 @@ th[aria-sort] .th-sort{color:var(--ink)}
 .card-price{flex:0 0 auto;white-space:nowrap}
 .card-price .was{text-decoration:line-through;opacity:.5;font-size:.78em;margin-right:6px;font-weight:400}
 .card-price .now{color:var(--clay)}
+
+/* Settings: backups panel */
+.backup-panel{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;
+  border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:18px 0 22px;background:var(--paper)}
