@@ -149,22 +149,83 @@ function postCutoff(store, fonts) {
     </div>`);
 }
 
+/* Instagram shows roughly the first 120 characters before "more", so every
+   caption has to land its point inside that window — and end on a whole
+   thought, never a chopped-off clause. Hashtags go in the first comment.     */
+const CLIP = 120;
+
+function clip(s, n = CLIP) {
+  const line = String(s).replace(/\s+/g, " ").trim();
+  return line.length <= n ? line : null; // null means "rewrite it shorter", not "cut it"
+}
+
+/* "Order by Thursday 6 pm for weekend pickup" -> "Order by Thursday 6 pm." */
+function cutoffShort(cutoff) {
+  const m = String(cutoff || "").match(/Thursday\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)/i);
+  return m ? `Order by ${m[0]}.` : "Order by Thursday 6 pm.";
+}
+
+const dayShort = (w, fallback) => {
+  const m = String(w || "").match(/^[A-Za-z]+/);
+  return m ? m[0].replace(/s$/, "") : fallback;
+};
+
+function firstSentence(s, max = 60) {
+  const clean = String(s || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const sentence = (clean.match(/^[^.!?]+[.!?]/) || [clean])[0].trim();
+  if (sentence.length <= max) return sentence;
+  const cut = sentence.slice(0, max - 1).replace(/[\s,;:—–-]+\S*$/, "");
+  return `${cut}…`;
+}
+
+/* Try shorter and shorter phrasings; the first that fits wins. */
+function fit(candidates) {
+  for (const c of candidates) {
+    const got = clip(c);
+    if (got) return got;
+  }
+  throw new Error(`no caption candidate fits ${CLIP} chars`);
+}
+
 function captions(store, product, step) {
   const price = `$${(product.priceCents / 100).toFixed(2)}`;
+  const was = product.regularCents && product.regularCents > product.priceCents
+    ? ` (was $${(product.regularCents / 100).toFixed(2)})` : "";
+  const cut = cutoffShort(store.site.cutoff);
+  const name = `${product.name}${product.weight ? `, ${product.weight}` : ""}`;
+  const pickup = dayShort(store.site.pickupWindow, "Saturday");
+  const delivery = dayShort(store.delivery?.windows, "Friday");
+
+  const noteFull = firstSentence(product.note, 55);
+  const noteShort = firstSentence(product.note, 34);
+
+  const processFull = firstSentence(step.body, 70);
+  const processShort = firstSentence(step.body, 40);
+
   return [
-    `${product.name}${product.weight ? `, ${product.weight}` : ""} — ${price}.\n\n` +
-      `${product.note || "Made in small batches in Calgary."}\n\n` +
-      `${cutoffLine(store.site.cutoff)} Pickup Saturday. Link in bio.\n\n` +
-      `#yyc #calgary #calgaryfood #smallbatch #artisandairy #yycfood`,
-    step.body.replace(/<[^>]+>/g, "") + "\n\n" +
-      `Small batches, Alberta milk, no shortcuts. ${cutoffLine(store.site.cutoff)}\n\n` +
-      `#yyc #calgary #calgaryeats #smallbatch #madefromscratch #dairy`,
-    `${cutoffLine(store.site.cutoff)}\n\n` +
-      `Pickup ${nb(store.site.pickupWindow || "Saturdays")} in Calgary, delivery ${nb(store.delivery?.windows || "Friday")}. Everything is made after you order, so nothing sits in a cooler waiting for a buyer.\n\n` +
-      `rebelcreamery.ca — link in bio.\n\n` +
-      `#yyc #calgary #calgarysmallbusiness #shoplocalyyc #supportlocal`
+    fit([
+      `${name} — ${price}${was}. ${noteFull} ${cut}`,
+      `${name} — ${price}${was}. ${noteShort} ${cut}`,
+      `${name} — ${price}${was}. ${cut}`
+    ].filter((c) => !c.includes("null"))),
+    fit([
+      `${processFull} ${cut}`,
+      `${processShort} ${cut}`,
+      `${processShort} ${cut} Link in bio.`
+    ].filter((c) => !c.includes("null"))),
+    fit([
+      `${cut} Pickup ${pickup}, delivery ${delivery}. Made after you order.`,
+      `${cut} Pickup ${pickup}, delivery ${delivery}.`,
+      `${cut} Link in bio.`
+    ])
   ];
 }
+
+const HASHTAGS = [
+  "#yyc #calgary #calgaryfood #smallbatch #artisandairy #yycfood",
+  "#yyc #calgary #calgaryeats #smallbatch #madefromscratch #dairy",
+  "#yyc #calgary #calgarysmallbusiness #shoplocalyyc #supportlocal"
+];
 
 async function main() {
   const week = FORCED_WEEK ?? isoWeek();
@@ -213,9 +274,13 @@ async function main() {
 
   const caps = captions(store, product, step);
   await fs.writeFile(path.join(outDir, "captions.txt"),
-    caps.map((c, i) => `--- POST ${i + 1} ---\n${c}\n`).join("\n"));
+    caps.map((c, i) => `--- POST ${i + 1} (${c.length} chars) ---\n${c}\n--- first comment ---\n${HASHTAGS[i]}\n`).join("\n"));
 
-  console.log(JSON.stringify({ week, product: product.name, outDir, files, captions: caps, step: step.head.replace(/<[^>]+>/g, " ") }, null, 2));
+  console.log(JSON.stringify({
+    week, product: product.name, outDir, files,
+    captions: caps.map((c, i) => ({ text: c, chars: c.length, hashtags: HASHTAGS[i] })),
+    step: step.head.replace(/<[^>]+>/g, " ")
+  }, null, 2));
 }
 
 main().catch((err) => { console.error(err.message); process.exit(1); });
