@@ -334,6 +334,7 @@ table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860p
 .badge-pending{background:#f7ecc9;color:#7a5a12}
 .badge-awaiting_etransfer{background:#fbe3d6;color:#8a3a17}
 .badge-cancelled{background:#eee;color:#666}
+.badge-soldout{background:#f6e7cd;color:#8a5a12}
 .inline-form{display:flex;gap:6px;align-items:center}
 .inline-form select{width:auto;margin:0;padding:6px 8px;font-size:12.5px}
 
