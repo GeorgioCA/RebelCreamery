@@ -21,7 +21,7 @@ import {
 } from "./lib/views.js";
 import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
 import { evaluateDiscount } from "./lib/discounts.js";
-import { runBackup, backupEnabled, lastBackup, listBackups, fetchBackup } from "./lib/backup.js";
+import { runBackup, backupEnabled, lastBackup, listBackups, fetchBackup, snapshotBuffer } from "./lib/backup.js";
 import { stageRestore, restoreLog } from "./lib/restore.js";
 import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtransferDigest, sendWeeklySummary, mailConfigured, mailFrom } from "./lib/mail.js";
 
@@ -567,6 +567,20 @@ app.post("/admin/discounts/:code/toggle", adminAuth, (req, res) => {
 app.post("/admin/discounts/:code/delete", adminAuth, (req, res) => {
   deleteDiscount(req.params.code);
   res.redirect("/admin/discounts?saved=1");
+});
+
+app.get("/admin/backup/download", adminAuth, (req, res) => {
+  try {
+    const { day, buffer } = snapshotBuffer();
+    res.setHeader("Content-Type", "application/vnd.sqlite3");
+    res.setHeader("Content-Disposition", `attachment; filename="rebel-creamery-${day}.sqlite"`);
+    res.setHeader("Content-Length", buffer.length);
+    res.send(buffer);
+    console.log(`[backup] download ${day}: ${buffer.length} bytes`);
+  } catch (err) {
+    console.error(`[backup] download failed: ${err.message}`);
+    res.redirect(`/admin/settings?backup_error=${encodeURIComponent("Download failed: " + err.message)}`);
+  }
 });
 
 app.post("/admin/backup", adminAuth, async (req, res) => {

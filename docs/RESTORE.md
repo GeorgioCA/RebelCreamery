@@ -29,6 +29,9 @@ The command-line procedure below still applies when the panel itself is down.
 
 ## 1. Get the snapshot
 
+**From Settings → Download backup** — the button streams a current `VACUUM INTO` snapshot as
+`rebel-creamery-YYYY-MM-DD.sqlite`. It is the database only; product photos come from the nightly B2 archive below.
+
 **From the B2 web console** — Buckets → `EComStore` → `rebel-creamery/db/` → pick a date → Download.
 
 **Or with the `b2` CLI:**

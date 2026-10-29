@@ -145,4 +145,8 @@ and can be triggered by hand from **Settings → Backups**. Each run:
 The key is bucket-scoped and cannot list buckets, so `B2_BUCKET_ID` is required (bucket `EComStore`).
 Status of the last run is shown on the Settings page and stored in `data/backups/last.json`.
 
+**Download backup** at the top of Settings streams a fresh `VACUUM INTO` snapshot as
+`rebel-creamery-YYYY-MM-DD.sqlite` straight from the running app. It works even when B2 is not configured; it contains
+the database only (orders, products, settings), not `uploads/`.
+
 **Restore:** see `docs/RESTORE.md` — tested end to end (download → integrity check → boot → order count).
