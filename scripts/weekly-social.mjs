@@ -18,6 +18,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STORE_URL = (process.env.STORE_URL || "https://rebelcreamery.ca").replace(/\/$/, "");
 const argWeek = process.argv.indexOf("--week");
 const FORCED_WEEK = argWeek > -1 ? Number(process.argv[argWeek + 1]) : null;
+const argProduct = process.argv.indexOf("--product");
+const FORCED_PRODUCT = argProduct > -1 ? String(process.argv[argProduct + 1]) : null;
 
 const MOSS = "#2f4436", CREAM = "#fbf7ef", INK = "#1d2a21", GOLD = "#f4c95d", CLAY = "#a94a20";
 
@@ -72,6 +74,11 @@ function processFor(product, week) {
 function pick(products, week) {
   // Products rotate one per week; order is stable so weeks don't repeat until the list does.
   if (!products.length) throw new Error("no active products");
+  if (FORCED_PRODUCT) {
+    const forced = products.find((p) => p.id === FORCED_PRODUCT);
+    if (!forced) throw new Error(`no active product with id ${FORCED_PRODUCT}`);
+    return forced;
+  }
   return products[week % products.length];
 }
 
@@ -95,15 +102,17 @@ ${cssBase}${extra}</style></head><body>${body}</body></html>`;
 
 function postProduct(store, product, banner, fonts) {
   const price = `$${(product.priceCents / 100).toFixed(2)}`;
+  const was = product.regularCents && product.regularCents > product.priceCents
+    ? `<div class="was">$${(product.regularCents / 100).toFixed(2)}</div>` : "";
   const tags = (product.tags || []).slice(0, 3).join(" · ");
-  return page(fonts, `.poster{background:${CREAM};color:${INK}} .price{font-family:'Fraunces';font-size:92px;color:${CLAY}}`,
+  return page(fonts, `.poster{background:${CREAM};color:${INK}} .price{font-family:'Fraunces';font-size:92px;color:${CLAY}} .was{font-family:'Fraunces';font-size:52px;color:#6d6455;text-decoration:line-through;text-decoration-thickness:3px;text-decoration-color:#6d6455;align-self:baseline}`,
     `<div class="poster">
       <div class="eyebrow" style="color:#4c5a4f">This week · ${esc(banner)}</div>
       <div>
         <div class="h1" style="font-size:${product.name.length > 14 ? 104 : 126}px">${esc(product.name)}</div>
         <div class="rule" style="background:${GOLD};margin:44px 0 32px"></div>
         <div style="display:flex;align-items:baseline;gap:26px">
-          <div class="price">${price}</div>
+          ${was}<div class="price">${price}</div>
           <div class="sub" style="color:#4c5a4f">${esc(product.weight || "")}</div>
         </div>
         <div class="sub" style="margin-top:26px;max-width:820px;color:#4c5a4f">${esc(product.note || tags)}</div>
