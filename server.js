@@ -575,6 +575,7 @@ app.get("/admin/backup/download", adminAuth, (req, res) => {
     res.setHeader("Content-Type", "application/vnd.sqlite3");
     res.setHeader("Content-Disposition", `attachment; filename="rebel-creamery-${day}.sqlite"`);
     res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "no-store, private");
     res.send(buffer);
     console.log(`[backup] download ${day}: ${buffer.length} bytes`);
   } catch (err) {
