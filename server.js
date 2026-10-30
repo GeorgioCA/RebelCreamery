@@ -584,32 +584,6 @@ app.get("/admin/backup/download", adminAuth, (req, res) => {
   }
 });
 
-/* One-off maintenance: remove cancelled orders, their lines and any labels
-   already queued for them. Guarded by a literal confirm body, and not linked
-   from any page — it exists for cleanup runs, not day-to-day use. */
-app.post("/admin/maintenance/purge-cancelled-orders", adminAuth, (req, res) => {
-  if (String(req.body?.confirm || "") !== "DELETE CANCELLED ORDERS") {
-    return res.status(400).json({ ok: false, error: "confirm body must read DELETE CANCELLED ORDERS" });
-  }
-  const numbers = db.prepare("SELECT number FROM orders WHERE status = 'cancelled'").all().map((r) => r.number);
-  if (!numbers.length) return res.json({ ok: true, numbers: [], deleted: { orders: 0, items: 0, printJobs: 0 } });
-
-  db.exec("BEGIN");
-  try {
-    const items = db.prepare("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status = 'cancelled')").run();
-    const orders = db.prepare("DELETE FROM orders WHERE status = 'cancelled'").run();
-    let printJobs = 0;
-    const delJob = db.prepare("DELETE FROM print_jobs WHERE payload LIKE ?");
-    for (const n of numbers) printJobs += Number(delJob.run(`%#${n}%`).changes || 0);
-    db.exec("COMMIT");
-    console.log(`[cleanup] removed ${numbers.length} cancelled order(s): ${numbers.join(", ")}`);
-    res.json({ ok: true, numbers, deleted: { orders: Number(orders.changes), items: Number(items.changes), printJobs } });
-  } catch (err) {
-    db.exec("ROLLBACK");
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
 app.post("/admin/backup", adminAuth, async (req, res) => {
   const out = await runBackup({ manual: true });
   console.log(`[backup] manual: ${out.ok ? "ok" : "FAILED"} ${out.files?.length || 0} file(s)${out.error ? " — " + out.error : ""}`);
