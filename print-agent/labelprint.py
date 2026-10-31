@@ -150,6 +150,21 @@ def render(job: dict, width: int = WIDTH_PX) -> Image.Image:
         canvas.paste(logo, (margin, y))
         y += logo.height + 12
 
+    # Product illustration at the top right, sent as a base64 PNG by the store.
+    art_img = None
+    art_b64 = job.get("art")
+    if art_b64:
+        try:
+            import base64, io
+            art_img = Image.open(io.BytesIO(base64.b64decode(art_b64))).convert("L")
+            max_h = 150
+            if art_img.height > max_h:
+                art_img = art_img.resize((max(1, round(art_img.width * max_h / art_img.height)), max_h))
+            canvas.paste(art_img, (width - margin - art_img.width, margin))
+        except Exception as exc:
+            LOG.warning("could not decode label art: %s", exc)
+            art_img = None
+
     brand = job.get("brand")
     if brand:
         f = font(19, bold=True)
@@ -157,6 +172,9 @@ def render(job: dict, width: int = WIDTH_PX) -> Image.Image:
         y += int(f.size * 1.5)
         d.line([(margin, y), (width - margin, y)], fill=0, width=3)
         y += 12
+
+    if art_img:
+        y = max(y, margin + art_img.height + 10)
 
     heading = job.get("heading") or job.get("title")
     if heading:

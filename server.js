@@ -19,7 +19,7 @@ import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
   renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, renderRestore, render404
 } from "./lib/views.js";
-import { orderLabel, productLabel, thankYouLabel, renderOrderLabelHTML, renderProductLabelHTML, renderThankYouLabelHTML } from "./lib/labels.js";
+import { orderLabel, productLabel, thankYouLabel, labelArtPng, renderOrderLabelHTML, renderProductLabelHTML, renderThankYouLabelHTML } from "./lib/labels.js";
 import { evaluateDiscount } from "./lib/discounts.js";
 import { runBackup, backupEnabled, lastBackup, listBackups, fetchBackup, snapshotBuffer } from "./lib/backup.js";
 import { stageRestore, restoreLog } from "./lib/restore.js";
@@ -923,11 +923,13 @@ app.post("/admin/print/order/:number", adminAuth, (req, res) => {
     : "/admin?queued=1");
 });
 
-app.post("/admin/print/product/:id", adminAuth, (req, res) => {
+app.post("/admin/print/product/:id", adminAuth, async (req, res) => {
   const product = getProduct(req.params.id);
   if (!product) return res.status(404).send("No such product.");
   const copies = Math.min(20, Math.max(1, parseInt(req.body.copies, 10) || 1));
-  enqueuePrint("product", productLabel(product, copies, baseFor(req)), copies);
+  const payload = productLabel(product, copies, baseFor(req));
+  payload.art = await labelArtPng(product);
+  enqueuePrint("product", payload, copies);
   res.redirect(`/admin/products/${encodeURIComponent(product.id)}?queued=${copies}`);
 });
 

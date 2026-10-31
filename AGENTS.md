@@ -108,7 +108,7 @@ No test runner in CI. Verify changes with the preview server plus a Playwright s
 - Route order matters in Express: `/admin/orders/:number` must not shadow the more specific routes.
 - The print agent runs on the machine with the printer, not in the container. Labels are queued in SQLite and polled. On Windows it needs a WinUSB binding via Zadig, not a Brother driver — see `print-agent/README.md`.
 - Label type size is one knob in each renderer: `TEXT_SCALE` in `print-agent/labelprint.py` and `--ts` in `lib/labels.js`. Change both or the browser and printed labels drift apart.
-- Product labels carry a QR to `${PUBLIC_BASE_URL}/#product-<id>`. The server sends the module matrix in the payload, so the agent needs no QR library — but an agent older than this change ignores the field, so copy the updated `labelprint.py` to the machine that prints.
+- Product labels carry the product's storefront illustration (rasterised server-side to a base64 PNG) and a QR to `${PUBLIC_BASE_URL}/#product-<id>`. The payload ships the QR module matrix and the PNG, so the agent needs no SVG/QR library — but an agent older than this change ignores both fields, so copy the updated `labelprint.py` to the machine that prints.
 - The yogurt illustration shows `{{FAT}}`, filled from the product name or tags (`artFor`). Don't hardcode a percentage into the SVG.
 - WhatsApp/SMS do not exist. Email is the only outbound channel.
 
