@@ -218,6 +218,31 @@ def render(job: dict, width: int = WIDTH_PX) -> Image.Image:
         d.text((margin + 12, y + int(f.size * 0.34)), f"Contains: {allergens}", font=f, fill=0)
         y += box_h + 10
 
+    qr = job.get("qr")
+    if qr:
+        rows = qr.get("rows") or []
+        n = int(qr.get("modules") or len(rows) or 0)
+        if n and rows:
+            y += 10
+            size_px = max(60, round(float(qr.get("size_mm", 16)) / 25.4 * 300))
+            quiet = 4
+            mod = max(1, size_px // (n + 2 * quiet))
+            side = mod * (n + 2 * quiet)
+            # quiet zone + modules; drawn module by module so no QR library is needed here
+            d.rectangle([(margin, y), (margin + side, y + side)], fill=255)
+            for r, line in enumerate(rows):
+                for c, bit in enumerate(str(line)):
+                    if bit == "1":
+                        x0 = margin + (c + quiet) * mod
+                        y0 = y + (r + quiet) * mod
+                        d.rectangle([(x0, y0), (x0 + mod - 1, y0 + mod - 1)], fill=0)
+            cap_x = margin + side + 14
+            if cap_x < width - margin - 60:
+                f = font(20, bold=True)
+                d.text((cap_x, y + side // 2 - 24), "Scan to", font=f, fill=0)
+                d.text((cap_x, y + side // 2), "reorder", font=f, fill=0)
+            y += side + 10
+
     footer = job.get("footer") or []
     if footer:
         y += 10
