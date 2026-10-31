@@ -927,7 +927,7 @@ app.post("/admin/print/product/:id", adminAuth, (req, res) => {
   const product = getProduct(req.params.id);
   if (!product) return res.status(404).send("No such product.");
   const copies = Math.min(20, Math.max(1, parseInt(req.body.copies, 10) || 1));
-  enqueuePrint("product", productLabel(product, copies), copies);
+  enqueuePrint("product", productLabel(product, copies, baseFor(req)), copies);
   res.redirect(`/admin/products/${encodeURIComponent(product.id)}?queued=${copies}`);
 });
 
@@ -955,7 +955,7 @@ app.get("/admin/labels/thankyou/:number", adminAuth, (req, res) => {
 app.get("/admin/labels/product/:id", adminAuth, (req, res) => {
   const product = getProduct(req.params.id);
   if (!product) return res.status(404).send("No such product.");
-  res.send(renderProductLabelHTML(product));
+  res.send(renderProductLabelHTML(product, baseFor(req)));
 });
 
 /* ------------------------------ print agent API --------------------------- */
