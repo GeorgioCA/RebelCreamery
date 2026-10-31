@@ -45,7 +45,7 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 ## Admin surfaces
 
 - `/admin` — order book: summary tiles, paginated order table (`?page=`), status dropdown, Label, View.
-- `/admin/orders/:number` — one order: customer, fulfilment, items, status/label/resend actions.
+- `/admin/orders/:number` — one order: customer, fulfilment, items, status/label/thank-you sticker/resend actions.
 - `/admin/products` — product table; `/admin/products/:id` edits a product, sets stock and sold-out, and queues labels.
 - Stock and the sold-out flag are only editable per product — there are no stock cards on the dashboard.
 

@@ -19,7 +19,7 @@ import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
   renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, renderRestore, render404
 } from "./lib/views.js";
-import { orderLabel, productLabel, renderOrderLabelHTML, renderProductLabelHTML } from "./lib/labels.js";
+import { orderLabel, productLabel, thankYouLabel, renderOrderLabelHTML, renderProductLabelHTML, renderThankYouLabelHTML } from "./lib/labels.js";
 import { evaluateDiscount } from "./lib/discounts.js";
 import { runBackup, backupEnabled, lastBackup, listBackups, fetchBackup, snapshotBuffer } from "./lib/backup.js";
 import { stageRestore, restoreLog } from "./lib/restore.js";
@@ -931,10 +931,25 @@ app.post("/admin/print/product/:id", adminAuth, (req, res) => {
   res.redirect(`/admin/products/${encodeURIComponent(product.id)}?queued=${copies}`);
 });
 
+app.post("/admin/print/thankyou/:number", adminAuth, (req, res) => {
+  const order = getOrder(req.params.number);
+  if (!order) return res.status(404).send("No such order.");
+  enqueuePrint("thankyou", thankYouLabel(order), 1);
+  res.redirect(req.body.back === "order"
+    ? `/admin/orders/${encodeURIComponent(order.number)}?queued=1`
+    : "/admin?queued=1");
+});
+
 app.get("/admin/labels/order/:number", adminAuth, (req, res) => {
   const order = getOrder(req.params.number);
   if (!order) return res.status(404).send("No such order.");
   res.send(renderOrderLabelHTML(order));
+});
+
+app.get("/admin/labels/thankyou/:number", adminAuth, (req, res) => {
+  const order = getOrder(req.params.number);
+  if (!order) return res.status(404).send("No such order.");
+  res.send(renderThankYouLabelHTML(order));
 });
 
 app.get("/admin/labels/product/:id", adminAuth, (req, res) => {
