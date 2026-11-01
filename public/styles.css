@@ -506,8 +506,13 @@ table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860p
 /* Checkout: discount code */
 .discount-box{margin:14px 0 4px;padding-top:14px;border-top:1px solid var(--line)}
 .discount-box label{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px}
-.discount-row{display:flex;gap:8px}
-.discount-row input{flex:1 1 auto;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font:inherit;font-size:14px;text-transform:uppercase}
+.discount-row{display:flex;align-items:center;gap:8px}
+.discount-row input{
+  flex:1 1 auto;min-width:0;height:40px;margin:0;padding:0 11px;border:1px solid var(--line);
+  border-radius:8px;background:var(--paper);font:inherit;font-size:14px;text-transform:uppercase;
+}
+/* Same height as the field it sits beside, so the pair reads as one control. */
+.discount-row .btn{flex:0 0 auto;height:40px;padding:0 14px;font-size:13px;line-height:1;border-radius:8px}
 .discount-row .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);box-shadow:none}
 .discount-msg{margin:8px 0 0;font-size:13px;min-height:1em}
 .discount-msg.ok{color:#2f6b3f}
