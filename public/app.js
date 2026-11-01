@@ -43,7 +43,7 @@
     }
     if (!PLAN_WEEKS.includes(weeks) || !p.subscribable) return null;
     return { key, plan: true, p, weeks, qtyMax: 1, price: unit * weeks, unit,
-      label: `${p.name} ${p.weight} — ${weeks}-week card` };
+      label: `${p.name} ${p.weight} — ${weeks}-week subscription` };
   }
 
   const count = (cart) => Object.values(cart).reduce((a, b) => a + b, 0);
@@ -251,8 +251,8 @@
           const label = l.plan ? l.label : `${l.p.name} ${l.p.weight}`.trim();
           // The card is chosen here, on the line it applies to — not on the shelf card.
           const ctl = l.p.subscribable ? `<label class="line-plan">
-            <span>Weekly card</span>
-            <select data-plan-for="${esc(l.p.id)}" aria-label="Make ${esc(l.p.name)} a weekly card">
+            <span>Subscription</span>
+            <select data-plan-for="${esc(l.p.id)}" aria-label="Make ${esc(l.p.name)} a subscription">
               <option value="">One-off</option>
               ${PLAN_WEEKS.map((w) => `<option value="${w}"${l.plan && l.weeks === w ? " selected" : ""}>${w} weeks${w === 12 ? " + 1 free" : ""}</option>`).join("")}
             </select>
@@ -275,8 +275,8 @@
         el.hidden = !card;
         el.textContent = card
           ? (method === "delivery"
-              ? "Week 1 of your card is in this delivery. The rest are collected at pickup, one a week."
-              : "Week 1 of your card is in this order. The rest are collected at pickup, one a week.")
+              ? "Week 1 of your subscription is in this delivery. The rest are collected at pickup, one a week."
+              : "Week 1 of your subscription is in this order. The rest are collected at pickup, one a week.")
           : "";
       }
 
