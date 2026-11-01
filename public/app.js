@@ -21,20 +21,62 @@
     localStorage.setItem(KEY, JSON.stringify(cart));
     document.dispatchEvent(new CustomEvent("cart:change"));
   }
+  /* Cart keys: "yogurt-6" for a one-off, "plan:yogurt-6:8" for a weekly card.
+     A card is one line at the block price; its tubs live on the server, so its
+     quantity is always 1 and it never counts against stock.                 */
+  const PLAN_WEEKS = [4, 8, 12];
+  const planKey = (id, weeks) => `plan:${id}:${weeks}`;
+  const parseKey = (key) => {
+    const m = /^plan:([^:]+):(\d+)$/.exec(key);
+    return m ? { plan: true, id: m[1], weeks: Number(m[2]) } : { plan: false, id: key, weeks: 0 };
+  };
+  const credited = (weeks) => (weeks >= 12 ? weeks + 1 : weeks);
+
+  function lineFor(key) {
+    const { plan, id, weeks } = parseKey(key);
+    const p = byId[id];
+    if (!p) return null;
+    const unit = priceOf(p);
+    if (!plan) {
+      return { key, plan: false, p, weeks: 0, qtyMax: p.max, price: unit, unit,
+        label: `${p.name} ${p.weight}`.trim() };
+    }
+    if (!PLAN_WEEKS.includes(weeks) || !p.subscribable) return null;
+    return { key, plan: true, p, weeks, qtyMax: 1, price: unit * weeks, unit,
+      label: `${p.name} ${p.weight} — ${weeks}-week card` };
+  }
+
   const count = (cart) => Object.values(cart).reduce((a, b) => a + b, 0);
   const subtotal = (cart) =>
-    Object.entries(cart).reduce((s, [id, q]) => s + priceOf(byId[id]) * q, 0);
-  const clean = (cart) =>
-    Object.fromEntries(Object.entries(cart).filter(([id, q]) => byId[id] && q > 0).map(([id, q]) => [id, Math.min(q, byId[id].max)]));
+    Object.entries(cart).reduce((s, [k, q]) => { const l = lineFor(k); return s + (l ? l.price * q : 0); }, 0);
+  const clean = (cart) => Object.fromEntries(Object.entries(cart).flatMap(([k, q]) => {
+    const l = lineFor(k);
+    if (!l || !(q > 0)) return [];
+    return [[k, l.plan ? 1 : Math.min(q, l.qtyMax)]];
+  }));
+  const hasPlan = (cart) => Object.keys(cart).some((k) => parseKey(k).plan);
 
   function add(id, qty) {
     const cart = clean(read());
+    if (!byId[id]) return;
     cart[id] = Math.min((cart[id] || 0) + qty, byId[id].max);
     write(cart);
   }
-  function setQty(id, qty) {
+  function addPlan(id, weeks) {
+    const p = byId[id];
+    if (!p || !p.subscribable || !PLAN_WEEKS.includes(Number(weeks))) return null;
     const cart = clean(read());
-    if (qty <= 0) delete cart[id]; else cart[id] = Math.min(qty, byId[id].max);
+    const key = planKey(id, Number(weeks));
+    cart[key] = 1;
+    write(cart);
+    return key;
+  }
+  function setQty(key, qty) {
+    const cart = clean(read());
+    const l = lineFor(key);
+    if (!l) return;
+    if (qty <= 0) delete cart[key];
+    else cart[key] = l.plan ? 1 : Math.min(qty, l.qtyMax);
     write(cart);
   }
 
@@ -85,20 +127,28 @@
       return;
     }
 
-    body.innerHTML = Object.entries(cart).map(([id, q]) => {
-      const p = byId[id];
-      return `<div class="cart-item" data-id="${esc(id)}">
+    body.innerHTML = Object.entries(cart).map(([key, q]) => {
+      const l = lineFor(key);
+      if (!l) return "";
+      const sale = !l.plan && l.p.saleCents && l.p.saleCents < l.p.priceCents;
+      const meta = l.plan
+        ? `${l.weeks} weeks · ${credited(l.weeks)} tubs · ${money(l.unit)} a tub`
+        : `${esc(l.p.weight)} · ${money(l.unit)}${sale ? " sale" : ""}`;
+      const control = l.plan
+        ? `<span class="qty-fixed">1 card</span>`
+        : `<div class="stepper">
+          <button type="button" data-cart-step="-1" data-id="${esc(key)}" aria-label="Decrease ${esc(l.p.name)}">−</button>
+          <input type="number" value="${q}" min="0" max="${l.qtyMax}" data-cart-qty data-id="${esc(key)}" aria-label="${esc(l.p.name)} quantity"/>
+          <button type="button" data-cart-step="1" data-id="${esc(key)}" aria-label="Increase ${esc(l.p.name)}">+</button>
+        </div>`;
+      return `<div class="cart-item${l.plan ? " is-plan" : ""}" data-id="${esc(key)}">
         <div>
-          <h3>${esc(p.name)}</h3>
-          <span class="meta">${esc(p.weight)} · ${money(priceOf(p))}${p.saleCents && p.saleCents < p.priceCents ? " sale" : ""}</span>
+          <h3>${esc(l.p.name)}${l.plan ? ` <span class="tag-card">Weekly card</span>` : ""}</h3>
+          <span class="meta">${meta}</span>
         </div>
-        <span class="line-total">${money(priceOf(p) * q)}</span>
-        <div class="stepper">
-          <button type="button" data-cart-step="-1" data-id="${esc(id)}" aria-label="Decrease ${esc(p.name)}">−</button>
-          <input type="number" value="${q}" min="0" max="${p.max}" data-cart-qty data-id="${esc(id)}" aria-label="${esc(p.name)} quantity"/>
-          <button type="button" data-cart-step="1" data-id="${esc(id)}" aria-label="Increase ${esc(p.name)}">+</button>
-        </div>
-        <button class="remove" type="button" data-remove="${esc(id)}">Remove</button>
+        <span class="line-total">${money(l.price * q)}</span>
+        ${control}
+        <button class="remove" type="button" data-remove="${esc(key)}">Remove</button>
       </div>`;
     }).join("");
 
@@ -110,6 +160,16 @@
   }
 
   document.addEventListener("click", (e) => {
+    const planBtn = e.target.closest("[data-add-plan]");
+    if (planBtn) {
+      const id = planBtn.dataset.addPlan;
+      const weeks = Number(planBtn.closest(".card")?.querySelector("[data-plan-weeks]")?.value || 8);
+      if (addPlan(id, weeks)) {
+        toast(`${byId[id].name} — ${weeks}-week card added`);
+        openCart();
+      }
+      return;
+    }
     const addBtn = e.target.closest("[data-add]");
     if (addBtn) {
       const id = addBtn.dataset.add;
@@ -172,6 +232,16 @@
     const errorEl = document.getElementById("form-error");
     const submit = document.getElementById("place-order");
 
+    // Old subscribe links land here with ?plan=<id>&weeks=<n>: drop the card
+    // into the cart once, then behave like any other basket.
+    const SEED = window.__SEED_PLAN__ || null;
+    if (SEED) {
+      const key = planKey(SEED.id, Number(SEED.weeks));
+      const cart = clean(read());
+      if (!cart[key]) { cart[key] = 1; write(cart); }
+      if (history.replaceState) history.replaceState({}, "", "/checkout");
+    }
+
     const feeFor = (sub, method) =>
       method === "delivery" && sub < DELIVERY.freeOverCents ? DELIVERY.feeCents : 0;
 
@@ -185,11 +255,24 @@
         itemsEl.innerHTML = `<p class="muted">Your cart is empty. <a href="/#shop">Shop the batch →</a></p>`;
         submit.disabled = true;
       } else {
-        itemsEl.innerHTML = `<ul class="sum-items">${Object.entries(cart).map(([id, q]) => {
-          const p = byId[id];
-          return `<li><span>${esc(p.name)} ${esc(p.weight)} <span class="q">× ${q}</span></span><span>${money(priceOf(p) * q)}</span></li>`;
+        itemsEl.innerHTML = `<ul class="sum-items">${Object.entries(cart).map(([key, q]) => {
+          const l = lineFor(key);
+          if (!l) return "";
+          return `<li${l.plan ? ' class="is-plan"' : ""}><span>${esc(l.plan ? l.label : `${l.p.name} ${l.p.weight}`.trim())} <span class="q">× ${q}</span>${l.plan ? `<br/><span class="muted small">${credited(l.weeks)} tubs · ${money(l.unit)} a tub</span>` : ""}</span><span>${money(l.price * q)}</span></li>`;
         }).join("")}</ul>`;
         submit.disabled = false;
+      }
+
+      // A card means week 1 ships with this order and the rest are collected.
+      const card = hasPlan(cart);
+      for (const el of [document.getElementById("plan-note"), document.getElementById("plan-note-aside")]) {
+        if (!el) continue;
+        el.hidden = !card;
+        el.textContent = card
+          ? (method === "delivery"
+              ? "Week 1 of your card is in this delivery. The rest are collected at pickup, one a week."
+              : "Week 1 of your card is in this order. The rest are collected at pickup, one a week.")
+          : "";
       }
 
       const d = Math.min(disc.amountCents, s);
@@ -350,7 +433,10 @@
       errorEl.hidden = true;
       const data = new FormData(form);
       const cart = clean(read());
-      const items = Object.entries(cart).map(([id, qty]) => ({ id, qty }));
+      const items = Object.entries(cart).map(([key, qty]) => {
+        const { plan, id, weeks } = parseKey(key);
+        return plan ? { id, qty: 1, planWeeks: weeks } : { id, qty };
+      });
       if (!items.length) return;
 
       submit.disabled = true;

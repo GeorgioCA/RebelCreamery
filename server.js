@@ -13,11 +13,14 @@ import {
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listOrdersFiltered, listProducts, markPaid, printQueueSummary,
   countOrdersFiltered,
   releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku,
-  getSettings, saveSettings, listDiscounts, saveDiscount, setDiscountActive, deleteDiscount, useDiscount
+  getSettings, saveSettings, listDiscounts, saveDiscount, setDiscountActive, deleteDiscount, useDiscount,
+  PLAN_WEEKS, planQuote, activatePlans, getSubscription, listSubscriptionsForOrder, getSubscriptionByToken,
+  listSubscriptions, collectWeek, undoWeek, cancelSubscriptionsForOrder, subscriptionSummary, expireSubscriptions
 } from "./lib/db.js";
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
-  renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, renderRestore, render404
+  renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, renderRestore, render404,
+  renderSubscriptions, renderFaq
 } from "./lib/views.js";
 import { orderLabel, productLabel, thankYouLabel, labelArtPng, renderOrderLabelHTML, renderProductLabelHTML, renderThankYouLabelHTML } from "./lib/labels.js";
 import { evaluateDiscount } from "./lib/discounts.js";
@@ -84,6 +87,7 @@ app.post(
       const order = markPaid(session.id, session.client_reference_id);
       if (order) {
         console.log(`paid: ${order.number}`);
+        activatePlans(order);
         if (order.discount_code) useDiscount(order.discount_code);
         sendOrderConfirmation(order, `${baseFor(req)}/order/${order.token}`);
         sendOwnerOrderAlert(order, `${baseFor(req)}/admin/orders/${order.number}`);
@@ -272,8 +276,27 @@ app.post("/api/checkout", async (req, res) => {
     const lines = [];
     for (const raw of items) {
       const p = catalog[raw?.id];
-      const qty = Number(raw?.qty);
       if (!p) return res.status(400).json({ error: "That product is no longer available." });
+
+      // A weekly card is a line item: qty is always 1, and the line price is
+      // the whole block. The tubs behind it are tracked by the card, not stock.
+      const planWeeks = Number(raw?.planWeeks) || 0;
+      if (planWeeks) {
+        if (!PLAN_WEEKS.includes(planWeeks)) return res.status(400).json({ error: "Choose 4, 8 or 12 weeks." });
+        if (!p.subscribable) return res.status(400).json({ error: `${p.name} isn't sold as a weekly plan.` });
+        const q = planQuote(p, planWeeks);
+        lines.push({
+          id: p.id,
+          sku: p.sku,
+          name: `${p.name} ${p.weight} — ${planWeeks}-week plan${q.weeksCredited > planWeeks ? " (+1 free)" : ""}`,
+          priceCents: q.totalCents,
+          qty: 1,
+          planWeeks
+        });
+        continue;
+      }
+
+      const qty = Number(raw?.qty);
       if (!Number.isInteger(qty) || qty < 1 || qty > p.maxPerOrder) return res.status(400).json({ error: `Invalid quantity for ${p.name}.` });
       lines.push({ id: p.id, sku: p.sku, name: `${p.name} ${p.weight}`.trim(), priceCents: priceOf(p), qty });
     }
@@ -297,6 +320,8 @@ app.post("/api/checkout", async (req, res) => {
       if (!discount.ok) return res.status(400).json({ error: discount.error });
     }
     const discountCents = discount.ok ? discount.amountCents : 0;
+    // A card's first tub rides with the order, so delivery applies to the whole
+    // basket exactly as it would without one.
     const deliveryCents = method === "delivery" && subtotalCents < delivery.freeOverCents ? delivery.feeCents : 0;
     const totalCents = Math.max(0, subtotalCents - discountCents + deliveryCents);
     const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: deliveryAddress, notes: notes.trim(), items: lines, subtotalCents, deliveryCents, totalCents, discountCents, discountCode: discount.ok ? discount.code : "" };
@@ -320,6 +345,7 @@ app.post("/api/checkout", async (req, res) => {
       if (!MADE_TO_ORDER) reserveStock(lines);
       if (discount.ok) useDiscount(discount.code);
       const demoOrder = getOrder(number);
+      activatePlans(demoOrder);
       sendOrderConfirmation(demoOrder, `${baseFor(req)}/order/${token}`);
       sendOwnerOrderAlert(demoOrder, `${baseFor(req)}/admin/orders/${number}`);
       return res.json({ url: `/order/${token}` });
@@ -384,19 +410,41 @@ app.get("/", (_req, res) => {
   res.send(renderHome({ products: listProducts({ activeOnly: true }), demo: DEMO && !stripe, madeToOrder: MADE_TO_ORDER }));
 });
 
-app.get("/checkout", (_req, res) => {
-  res.send(renderCheckout({ demo: DEMO && !stripe, canCard: Boolean(stripe), products: listProducts({ activeOnly: true }) }));
+app.get("/checkout", (req, res) => {
+  const products = listProducts({ activeOnly: true });
+  const planId = String(req.query.plan || "");
+  const requested = Number(req.query.weeks);
+  const product = planId ? products.find((p) => p.id === planId && p.subscribable) : null;
+  const weeks = PLAN_WEEKS.includes(requested) ? requested : 8;
+  // Old "subscribe" links land here: seed the cart with the card, then use the
+  // one checkout path like any other basket.
+  res.send(renderCheckout({
+    demo: DEMO && !stripe,
+    canCard: Boolean(stripe),
+    products,
+    seedPlan: product ? { id: product.id, weeks } : null
+  }));
+});
+
+app.get("/faq", (_req, res) => {
+  res.send(renderFaq({ products: listProducts({ activeOnly: true }) }));
 });
 
 app.get("/order/:token", (req, res) => {
   res.set("Cache-Control", "no-store"); // order status changes; don't let it get cached
-  res.send(renderSuccess({ order: getOrderByToken(req.params.token), origin: baseFor(req) }));
+  const order = getOrderByToken(req.params.token);
+  res.send(renderSuccess({
+    order,
+    origin: baseFor(req),
+    subscriptions: order ? listSubscriptionsForOrder(order.number) : []
+  }));
 });
 
 // Staff lookup by order number. Public success links use /order/:token instead.
 app.get("/success", adminAuth, (req, res) => {
   res.set("Cache-Control", "no-store");
-  res.send(renderSuccess({ order: getOrder(String(req.query.order || "")), origin: baseFor(req) }));
+  const order = getOrder(String(req.query.order || ""));
+  res.send(renderSuccess({ order, origin: baseFor(req), subscriptions: order ? listSubscriptionsForOrder(order.number) : [] }));
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -792,6 +840,7 @@ function parseProductBody(body) {
     ingredients: String(body.ingredients || "").trim(),
     allergens: String(body.allergens || "Milk").trim() || "Milk",
     shelfLifeDays: Math.min(365, Math.max(1, parseInt(body.shelf_life_days, 10) || 14)),
+    subscribable: body.subscribable === "1",
     image: null
   };
 }
@@ -865,10 +914,35 @@ app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
   const status = String(req.body.status || "");
   if (!allowed.includes(status)) return res.status(400).send("Bad status.");
   const order = setStatus(req.params.number, status, { moveStock: !MADE_TO_ORDER });
+  // e-Transfer plans are activated by hand here; card plans arrive via the webhook.
+  if (order && ["paid", "packed", "completed"].includes(status)) activatePlans(order);
+  if (order && status === "cancelled") cancelSubscriptionsForOrder(order.number);
   if (order && ["paid", "packed", "completed", "cancelled"].includes(status)) {
     sendOrderUpdate(order, `${baseFor(req)}/order/${order.token}`);
   }
   res.redirect(req.body.back === "order" ? `/admin/orders/${encodeURIComponent(req.params.number)}` : "/admin");
+});
+
+/* ----------------------------- subscriptions ----------------------------- */
+
+app.get("/admin/subscriptions", adminAuth, (req, res) => {
+  expireSubscriptions();
+  res.send(renderSubscriptions({
+    subs: listSubscriptions(),
+    summary: subscriptionSummary(),
+    collected: req.query.collected === "1",
+    undone: req.query.undone === "1"
+  }));
+});
+
+app.post("/admin/subscriptions/:id/collect", adminAuth, (req, res) => {
+  collectWeek(Number(req.params.id));
+  res.redirect("/admin/subscriptions?collected=1");
+});
+
+app.post("/admin/subscriptions/:id/undo", adminAuth, (req, res) => {
+  undoWeek(Number(req.params.id));
+  res.redirect("/admin/subscriptions?undone=1");
 });
 
 app.post("/admin/products/:id/sold-out", adminAuth, (req, res) => {
@@ -901,6 +975,7 @@ app.get("/admin/orders/:number", adminAuth, (req, res) => {
   if (!order) return res.status(404).send(render404());
   res.send(renderOrderAdmin({
     order,
+    subscriptions: listSubscriptionsForOrder(order.number),
     queued: req.query.queued === "1",
     sent: req.query.sent === "1",
     mailFailed: req.query.mail === "0"
@@ -997,6 +1072,8 @@ app.use((_req, res) => res.status(404).send(render404()));
 function sweepPendingOrders() {
   const expired = expireStalePendingOrders(48 * 3600 * 1000, { moveStock: !MADE_TO_ORDER });
   if (expired.length) console.log(`expired unpaid orders: ${expired.join(", ")}`);
+  const cards = expireSubscriptions();
+  if (cards.length) console.log(`expired plans: ${cards.join(", ")}`);
 }
 sweepPendingOrders();
 setInterval(sweepPendingOrders, 30 * 60_000).unref();
