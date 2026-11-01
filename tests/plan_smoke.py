@@ -98,6 +98,13 @@ status, out = post("/api/checkout", {"items": [{"id": "halloumi", "qty": 1, "pla
                                      "name": "A B", "email": "a@b.co"})
 check("rejects a product that isn't subscribable", status == 400, f"{status} {out}")
 
+status, out = post("/api/checkout", {"items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 8, "tubsPerWeek": 4}],
+                                     "name": "A B", "email": "a@b.co"})
+check("rejects more than 3 tubs a week", status == 400, f"{status} {out}")
+status, out = post("/api/checkout", {"items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 8, "tubsPerWeek": 0}],
+                                     "name": "A B", "email": "a@b.co"})
+check("rejects zero tubs a week", status == 400, f"{status} {out}")
+
 # --- mixed basket, delivered (week 1 rides along) -------------------------
 status, out = post("/api/checkout", {
     "items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 8}, {"id": "halloumi", "qty": 1}],
@@ -137,7 +144,7 @@ if card:
 
 _, order_page = get(out["url"])
 check("customer page says week 1 is in the delivery", "is in this delivery" in order_page, order_page[:400])
-check("customer page shows 1 of 8", "1 of 8 collected" in order_page)
+check("customer page shows 1 of 8 weeks", "1 of 8 weeks collected" in order_page, order_page[:400])
 
 # --- plan-only, pickup: no fee -------------------------------------------
 status, out = post("/api/checkout", {
@@ -179,6 +186,32 @@ expected4 = 0 if UNIT * 4 >= FREE_OVER else 800
 check("a small card pays delivery like anything else", o4["delivery_cents"] == expected4,
       f'{o4["delivery_cents"]} vs {expected4}')
 
+# --- two tubs a week ------------------------------------------------------
+status, out = post("/api/checkout", {
+    "items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 8, "tubsPerWeek": 2}],
+    "name": "Two A Week", "email": "two2@example.com", "method": "pickup", "payment": "card"
+})
+check("two tubs a week checkout", status == 200, f"{status} {out}")
+o5 = connect().execute("SELECT * FROM orders ORDER BY id DESC LIMIT 1").fetchone()
+i5 = connect().execute("SELECT * FROM order_items WHERE order_id = ?", (o5["id"],)).fetchone()
+check("line carries plan_tubs", i5["plan_tubs"] == 2, i5["plan_tubs"])
+check("line is 8 x 2 tubs at the unit price", i5["price_cents"] == UNIT * 16, i5["price_cents"])
+check("line says two a week", "2 a week" in i5["name"], i5["name"])
+c5 = connect().execute("SELECT * FROM subscriptions WHERE order_number = ?", (o5["number"],)).fetchone()
+check("card stores tubs per week", c5["tubs_per_week"] == 2, c5["tubs_per_week"])
+check("card is 8 weeks", c5["weeks_credited"] == 8, c5["weeks_credited"])
+rows5 = connect().execute("SELECT COUNT(*) n FROM subscription_weeks WHERE subscription_id = ?", (c5["id"],)).fetchone()["n"]
+check("one row per week, not per tub", rows5 == 8, rows5)
+
+status, out = post("/api/checkout", {
+    "items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 12, "tubsPerWeek": 3}],
+    "name": "Three A Week", "email": "three@example.com", "method": "pickup", "payment": "card"
+})
+check("three tubs a week checkout", status == 200, f"{status} {out}")
+c6 = connect().execute("SELECT * FROM subscriptions WHERE order_number = (SELECT number FROM orders ORDER BY id DESC LIMIT 1)").fetchone()
+check("12 weeks credits a 13th week of 3", (c6["weeks_credited"], c6["tubs_per_week"]) == (13, 3), (c6["weeks_credited"], c6["tubs_per_week"]))
+check("paid 36 tubs for 39", (c6["weeks_paid"], c6["total_cents"]) == (12, UNIT * 36), (c6["weeks_paid"], c6["total_cents"]))
+
 # --- admin collect --------------------------------------------------------
 status, _ = get("/admin/subscriptions", auth=True)
 check("admin plans page loads", status == 200)
@@ -191,6 +224,7 @@ check("collect marks one week used", used == 2, used)
 _, admin_page = get("/admin/subscriptions", auth=True)
 check("admin page shows the new progress", "2 / 8" in admin_page, admin_page[:200])
 check("admin page shows unearned revenue", "prepaid, unearned" in admin_page)
+check("admin page lists tubs per week", "2 a week" in admin_page, admin_page[:200])
 
 status, _ = post_form(f"/admin/subscriptions/{sid}/undo", {}, auth=True)
 check("undo takes the week back", connect().execute("SELECT weeks_used FROM subscriptions WHERE id = ?", (sid,)).fetchone()[0] == 1)

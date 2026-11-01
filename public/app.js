@@ -21,29 +21,32 @@
     localStorage.setItem(KEY, JSON.stringify(cart));
     document.dispatchEvent(new CustomEvent("cart:change"));
   }
-  /* Cart keys: "yogurt-6" for a one-off, "plan:yogurt-6:8" for a weekly card.
-     A card is one line at the block price; its tubs live on the server, so its
-     quantity is always 1 and it never counts against stock.                 */
+  /* Cart keys: "yogurt-6" for a one-off, "plan:yogurt-6:8:2" for a card that is
+     8 weeks of 2 tubs. A card is one line at the block price; its tubs live on
+     the server, so its quantity is always 1 and it never counts against stock. */
   const PLAN_WEEKS = [4, 8, 12];
-  const planKey = (id, weeks) => `plan:${id}:${weeks}`;
+  const PLAN_TUBS = [1, 2, 3];
+  const planKey = (id, weeks, tubs = 1) => `plan:${id}:${weeks}:${tubs}`;
   const parseKey = (key) => {
-    const m = /^plan:([^:]+):(\d+)$/.exec(key);
-    return m ? { plan: true, id: m[1], weeks: Number(m[2]) } : { plan: false, id: key, weeks: 0 };
+    const m = /^plan:([^:]+):(\d+)(?::(\d+))?$/.exec(key);
+    return m
+      ? { plan: true, id: m[1], weeks: Number(m[2]), tubs: Number(m[3] || 1) }
+      : { plan: false, id: key, weeks: 0, tubs: 0 };
   };
   const credited = (weeks) => (weeks >= 12 ? weeks + 1 : weeks);
 
   function lineFor(key) {
-    const { plan, id, weeks } = parseKey(key);
+    const { plan, id, weeks, tubs } = parseKey(key);
     const p = byId[id];
     if (!p) return null;
     const unit = priceOf(p);
     if (!plan) {
-      return { key, plan: false, p, weeks: 0, qtyMax: p.max, price: unit, unit,
+      return { key, plan: false, p, weeks: 0, tubs: 0, qtyMax: p.max, price: unit, unit,
         label: `${p.name} ${p.weight}`.trim() };
     }
-    if (!PLAN_WEEKS.includes(weeks) || !p.subscribable) return null;
-    return { key, plan: true, p, weeks, qtyMax: 1, price: unit * weeks, unit,
-      label: `${p.name} ${p.weight} — ${weeks}-week subscription` };
+    if (!PLAN_WEEKS.includes(weeks) || !PLAN_TUBS.includes(tubs) || !p.subscribable) return null;
+    return { key, plan: true, p, weeks, tubs, qtyMax: 1, price: unit * weeks * tubs, unit,
+      label: `${p.name} ${p.weight} — ${weeks}-week subscription × ${tubs}` };
   }
 
   const count = (cart) => Object.values(cart).reduce((a, b) => a + b, 0);
@@ -251,15 +254,18 @@
           const title = `${l.p.name} ${l.p.weight}`.trim();
           // Name left, price right. The picker below carries the same two lines
           // the plan reads as, so the control explains itself.
-          const choices = [
-            { weeks: 0, main: "One-off", sub: `1 tub · ${money(l.unit)} a tub` },
-            ...PLAN_WEEKS.map((w) => ({
-              weeks: w,
-              main: `${w}-week subscription × 1`,
-              sub: `${credited(w)} tubs · ${money(l.unit)} a tub`
-            }))
-          ];
-          const chosen = choices.find((c) => c.weeks === (l.plan ? l.weeks : 0)) || choices[0];
+          const choices = [{ weeks: 0, tubs: 0, main: "One-off", sub: `1 tub · ${money(l.unit)} a tub` }];
+          for (const w of PLAN_WEEKS) {
+            for (const n of PLAN_TUBS) {
+              choices.push({
+                weeks: w,
+                tubs: n,
+                main: `${w}-week subscription × ${n}`,
+                sub: `${credited(w) * n} tubs · ${money(l.unit)} a tub`
+              });
+            }
+          }
+          const chosen = choices.find((c) => c.weeks === (l.plan ? l.weeks : 0) && c.tubs === (l.plan ? l.tubs : 0)) || choices[0];
           const ctl = l.p.subscribable ? `<details class="plan-pick">
             <summary>
               <span class="sr-only">Change how ${esc(l.p.name)} is bought</span>
@@ -267,8 +273,8 @@
               <span class="pp-sub">${esc(chosen.sub)}</span>
             </summary>
             <div class="pp-menu" role="listbox" aria-label="How ${esc(l.p.name)} is bought">
-              ${choices.map((c) => `<button type="button" role="option" aria-selected="${c.weeks === chosen.weeks}"
-                data-pick-for="${esc(l.p.id)}" data-pick-weeks="${c.weeks}">
+              ${choices.map((c) => `<button type="button" role="option" aria-selected="${c.weeks === chosen.weeks && c.tubs === chosen.tubs}"
+                data-pick-for="${esc(l.p.id)}" data-pick-weeks="${c.weeks}" data-pick-tubs="${c.tubs}">
                 <span class="pp-main">${esc(c.main)}</span>
                 <span class="pp-sub">${esc(c.sub)}</span>
               </button>`).join("")}
@@ -362,13 +368,13 @@
     document.addEventListener("cart:change", paint);
     // Turning a line into a subscription (and back) happens at checkout, on the
     // line itself. Rebuild in place so converting doesn't shuffle the basket.
-    function setLineMode(id, weeks) {
+    function setLineMode(id, weeks, tubs) {
       const cart = clean(read());
       const next = {};
       for (const [k, v] of Object.entries(cart)) {
         const parsed = parseKey(k);
         if (parsed.id !== id) { next[k] = v; continue; }
-        next[weeks ? planKey(id, weeks) : id] = 1;
+        next[weeks ? planKey(id, weeks, tubs) : id] = 1;
       }
       write(next);
       revalidate();
@@ -380,7 +386,7 @@
         e.preventDefault();
         const box = pick.closest("details");
         if (box) box.open = false;
-        setLineMode(pick.dataset.pickFor, Number(pick.dataset.pickWeeks));
+        setLineMode(pick.dataset.pickFor, Number(pick.dataset.pickWeeks), Number(pick.dataset.pickTubs));
       });
       // A click anywhere else puts an open picker away.
       document.addEventListener("click", (e) => {
@@ -488,8 +494,8 @@
       const data = new FormData(form);
       const cart = clean(read());
       const items = Object.entries(cart).map(([key, qty]) => {
-        const { plan, id, weeks } = parseKey(key);
-        return plan ? { id, qty: 1, planWeeks: weeks } : { id, qty };
+        const { plan, id, weeks, tubs } = parseKey(key);
+        return plan ? { id, qty: 1, planWeeks: weeks, tubsPerWeek: tubs } : { id, qty };
       });
       if (!items.length) return;
 

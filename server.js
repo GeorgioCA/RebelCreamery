@@ -14,7 +14,7 @@ import {
   countOrdersFiltered,
   releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku,
   getSettings, saveSettings, listDiscounts, saveDiscount, setDiscountActive, deleteDiscount, useDiscount,
-  PLAN_WEEKS, planQuote, activatePlans, getSubscription, listSubscriptionsForOrder, getSubscriptionByToken,
+  PLAN_WEEKS, PLAN_TUBS, planQuote, activatePlans, getSubscription, listSubscriptionsForOrder, getSubscriptionByToken,
   listSubscriptions, collectWeek, undoWeek, cancelSubscriptionsForOrder, subscriptionSummary, expireSubscriptions
 } from "./lib/db.js";
 import {
@@ -283,15 +283,21 @@ app.post("/api/checkout", async (req, res) => {
       const planWeeks = Number(raw?.planWeeks) || 0;
       if (planWeeks) {
         if (!PLAN_WEEKS.includes(planWeeks)) return res.status(400).json({ error: "Choose 4, 8 or 12 weeks." });
+        // Missing means one a week; an explicit 0 is a mistake, not a default.
+        const rawTubs = raw?.tubsPerWeek;
+        const planTubs = rawTubs === undefined || rawTubs === null || rawTubs === "" ? 1 : Number(rawTubs);
+        if (!PLAN_TUBS.includes(planTubs)) return res.status(400).json({ error: "Choose 1, 2 or 3 tubs a week." });
         if (!p.subscribable) return res.status(400).json({ error: `${p.name} isn't sold as a weekly plan.` });
-        const q = planQuote(p, planWeeks);
+        const q = planQuote(p, planWeeks, planTubs);
         lines.push({
           id: p.id,
           sku: p.sku,
-          name: `${p.name} ${p.weight} — ${planWeeks}-week plan${q.weeksCredited > planWeeks ? " (+1 free)" : ""}`,
+          // The packer reads this line: week 1 of the card is in this order.
+          name: `${p.name} ${p.weight} — ${planWeeks}-week plan, ${planTubs} a week${q.weeksCredited > planWeeks ? " (+1 free week)" : ""}`,
           priceCents: q.totalCents,
           qty: 1,
-          planWeeks
+          planWeeks,
+          planTubs
         });
         continue;
       }
