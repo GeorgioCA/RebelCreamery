@@ -248,20 +248,25 @@
         itemsEl.innerHTML = `<ul class="sum-items">${Object.entries(cart).map(([key, q]) => {
           const l = lineFor(key);
           if (!l) return "";
-          const label = l.plan ? l.label : `${l.p.name} ${l.p.weight}`.trim();
-          // The card is chosen here, on the line it applies to — not on the shelf card.
+          const title = `${l.p.name} ${l.p.weight}`.trim();
+          // Name left, price right, then the plan detail, then a full-width picker.
           const ctl = l.p.subscribable ? `<label class="line-plan">
-            <span>Subscription</span>
-            <select data-plan-for="${esc(l.p.id)}" aria-label="Make ${esc(l.p.name)} a subscription">
+            <span class="sr-only">How is ${esc(l.p.name)} bought?</span>
+            <select data-plan-for="${esc(l.p.id)}">
               <option value="">One-off</option>
               ${PLAN_WEEKS.map((w) => `<option value="${w}"${l.plan && l.weeks === w ? " selected" : ""}>${w} weeks${w === 12 ? " + 1 free" : ""}</option>`).join("")}
             </select>
           </label>` : "";
+          const detail = l.plan
+            ? `<span class="line-sub">${l.weeks}-week subscription × ${q}</span>
+               <span class="line-sub">${credited(l.weeks)} tubs · ${money(l.unit)} a tub</span>`
+            : "";
           return `<li${l.plan ? ' class="is-plan"' : ""}>
             <div class="line-main">
-              <span>${esc(label)} <span class="q">× ${q}</span>${l.plan ? `<br/><span class="muted small">${credited(l.weeks)} tubs · ${money(l.unit)} a tub</span>` : ""}</span>
+              <span>${esc(title)}${l.plan ? "" : ` <span class="q">× ${q}</span>`}</span>
               <span>${money(l.price * q)}</span>
             </div>
+            ${detail}
             ${ctl}
           </li>`;
         }).join("")}</ul>`;

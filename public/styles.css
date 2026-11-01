@@ -564,16 +564,16 @@ th[aria-sort] .th-sort{color:var(--ink)}
 }
 .sum-items li{display:block}
 .line-main{display:flex;justify-content:space-between;gap:14px}
-.line-plan{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;font-size:11.5px;letter-spacing:.02em;color:var(--ink-soft)}
-.line-plan span{flex:0 0 auto}
-/* The global field rule is width:100% + a 6px top margin; a picker this small
-   needs neither, and it stays on the label's line at every width. */
+.line-plan{display:block;margin-top:9px}
+.line-sub{display:block;font-size:11.5px;letter-spacing:.01em;color:var(--ink-soft);margin-top:1px}
+/* Full width of the line; the global field rule's 6px top margin is dropped. */
 .line-plan select{
-  flex:0 1 auto;width:auto;max-width:62%;height:24px;margin:0;padding:0 6px;
-  border:1px solid var(--line);border-radius:6px;background:transparent;
-  font:inherit;font-size:11.5px;color:var(--ink);
+  width:100%;max-width:none;height:34px;margin:0;padding:0 9px;
+  border:1px solid var(--line-strong);border-radius:8px;background:var(--paper);
+  font:inherit;font-size:12.5px;color:var(--ink);
 }
-.sum-items li.is-plan .line-main{color:var(--moss)}
+.sum-items li.is-plan{padding:10px 0 12px}
+.sum-items li.is-plan .line-main span:first-child{color:var(--ink)}
 .plan-status,.etransfer-box{
   border:1px solid var(--line);background:var(--card);border-radius:14px;padding:16px 18px;margin:22px 0;
 }
