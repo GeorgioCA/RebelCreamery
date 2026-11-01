@@ -160,16 +160,6 @@
   }
 
   document.addEventListener("click", (e) => {
-    const planBtn = e.target.closest("[data-add-plan]");
-    if (planBtn) {
-      const id = planBtn.dataset.addPlan;
-      const weeks = Number(planBtn.closest(".card")?.querySelector("[data-plan-weeks]")?.value || 8);
-      if (addPlan(id, weeks)) {
-        toast(`${byId[id].name} — ${weeks}-week card added`);
-        openCart();
-      }
-      return;
-    }
     const addBtn = e.target.closest("[data-add]");
     if (addBtn) {
       const id = addBtn.dataset.add;
@@ -258,7 +248,22 @@
         itemsEl.innerHTML = `<ul class="sum-items">${Object.entries(cart).map(([key, q]) => {
           const l = lineFor(key);
           if (!l) return "";
-          return `<li${l.plan ? ' class="is-plan"' : ""}><span>${esc(l.plan ? l.label : `${l.p.name} ${l.p.weight}`.trim())} <span class="q">× ${q}</span>${l.plan ? `<br/><span class="muted small">${credited(l.weeks)} tubs · ${money(l.unit)} a tub</span>` : ""}</span><span>${money(l.price * q)}</span></li>`;
+          const label = l.plan ? l.label : `${l.p.name} ${l.p.weight}`.trim();
+          // The card is chosen here, on the line it applies to — not on the shelf card.
+          const ctl = l.p.subscribable ? `<label class="line-plan">
+            <span>Weekly card</span>
+            <select data-plan-for="${esc(l.p.id)}" aria-label="Make ${esc(l.p.name)} a weekly card">
+              <option value="">One-off</option>
+              ${PLAN_WEEKS.map((w) => `<option value="${w}"${l.plan && l.weeks === w ? " selected" : ""}>${w} weeks${w === 12 ? " + 1 free" : ""}</option>`).join("")}
+            </select>
+          </label>` : "";
+          return `<li${l.plan ? ' class="is-plan"' : ""}>
+            <div class="line-main">
+              <span>${esc(label)} <span class="q">× ${q}</span>${l.plan ? `<br/><span class="muted small">${credited(l.weeks)} tubs · ${money(l.unit)} a tub</span>` : ""}</span>
+              <span>${money(l.price * q)}</span>
+            </div>
+            ${ctl}
+          </li>`;
         }).join("")}</ul>`;
         submit.disabled = false;
       }
@@ -338,6 +343,25 @@
     }
     form.addEventListener("change", () => { paint(); revalidate(); });
     document.addEventListener("cart:change", paint);
+    // Turning a line into a card (and back) happens at checkout, on the line itself.
+    if (itemsEl) {
+      itemsEl.addEventListener("change", (e) => {
+        const sel = e.target.closest("[data-plan-for]");
+        if (!sel) return;
+        const id = sel.dataset.planFor;
+        const weeks = Number(sel.value);
+        const cart = clean(read());
+        // Rebuild in place so converting a line doesn't shuffle the basket.
+        const next = {};
+        for (const [k, v] of Object.entries(cart)) {
+          const parsed = parseKey(k);
+          if (parsed.id !== id) { next[k] = v; continue; }
+          next[weeks ? planKey(id, weeks) : id] = 1;
+        }
+        write(next);
+        revalidate();
+      });
+    }
     paint();
 
     /* ------------------------ delivery address parts ----------------------- */

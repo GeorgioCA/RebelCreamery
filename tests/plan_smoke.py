@@ -81,8 +81,8 @@ HALL = unit_cents("halloumi")
 
 # --- storefront -----------------------------------------------------------
 _, home = get("/")
-check("home offers the weekly card", 'data-add-plan="yogurt-6"' in home, home[:200])
-check("home explains the card length options", "12 weeks + 1 free" in home)
+check("home marks the subscribable product", 'class="card-sub"' in home, home[:200])
+check("home keeps the card choice off the shelf", "data-plan-weeks" not in home and "data-add-plan" not in home)
 
 _, seeded = get("/checkout?plan=yogurt-6&weeks=12")
 check("old subscribe link seeds the cart", "window.__SEED_PLAN__" in seeded)

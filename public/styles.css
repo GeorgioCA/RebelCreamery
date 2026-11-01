@@ -539,15 +539,13 @@ th[aria-sort] .th-sort{color:var(--ink)}
 .restore-log{margin:8px 0 0;padding-left:18px}
 
 /* ------------------------------ weekly plans ----------------------------- */
-/* A card is a cart line: a fixed 1, a block price, and a note about week 1. */
-.card-plan-row{display:flex;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap}
-.card-plan-label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)}
-.card-plan-row select{
-  padding:7px 9px;border:1px solid var(--line-strong);border-radius:9px;
-  background:var(--paper);font:inherit;font-size:13px;color:var(--ink);
+/* The shop card carries only a mark; the card itself is chosen at checkout. */
+.card-sub{
+  display:inline-flex;align-items:center;justify-content:center;vertical-align:2px;
+  width:20px;height:20px;margin-left:7px;border-radius:99px;color:var(--moss);
+  border:1px solid rgba(47,68,54,.28);background:rgba(47,68,54,.05);
 }
-.btn-plan{padding:7px 12px;font-size:13px;border-radius:9px;background:transparent;border:1px solid var(--moss);color:var(--moss)}
-.btn-plan:hover{background:var(--moss);color:var(--paper)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .tag-card{
   display:inline-block;vertical-align:2px;margin-left:6px;font-family:var(--sans);
   font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--moss);
@@ -559,7 +557,14 @@ th[aria-sort] .th-sort{color:var(--ink)}
   font-size:13.5px;line-height:1.55;color:var(--moss);background:rgba(47,68,54,.07);
   border-radius:10px;padding:10px 12px;margin:10px 0 0;
 }
-.sum-items li.is-plan{align-items:flex-start}
+.sum-items li{display:block}
+.line-main{display:flex;justify-content:space-between;gap:14px}
+.line-plan{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:11.5px;letter-spacing:.02em;color:var(--ink-soft)}
+.line-plan select{
+  padding:4px 7px;border:1px solid var(--line-strong);border-radius:7px;
+  background:var(--paper);font:inherit;font-size:12px;color:var(--ink);
+}
+.sum-items li.is-plan .line-main{color:var(--moss)}
 .plan-status,.etransfer-box{
   border:1px solid var(--line);background:var(--card);border-radius:14px;padding:16px 18px;margin:22px 0;
 }
