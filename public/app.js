@@ -252,34 +252,40 @@
           const l = lineFor(key);
           if (!l) return "";
           const title = `${l.p.name} ${l.p.weight}`.trim();
-          // Name left, price right. The picker below carries the same two lines
-          // the plan reads as, so the control explains itself.
-          const choices = [{ weeks: 0, tubs: 0, main: "One-off", sub: `1 tub · ${money(l.unit)} a tub` }];
-          for (const w of PLAN_WEEKS) {
-            for (const n of PLAN_TUBS) {
-              choices.push({
-                weeks: w,
-                tubs: n,
-                main: `${w}-week subscription × ${n}`,
-                sub: `${credited(w) * n} tubs · ${money(l.unit)} a tub`
-              });
-            }
-          }
-          const chosen = choices.find((c) => c.weeks === (l.plan ? l.weeks : 0) && c.tubs === (l.plan ? l.tubs : 0)) || choices[0];
-          const ctl = l.p.subscribable ? `<details class="plan-pick">
-            <summary>
-              <span class="sr-only">Change how ${esc(l.p.name)} is bought</span>
-              <span class="pp-main">${esc(chosen.main)}</span>
-              <span class="pp-sub">${esc(chosen.sub)}</span>
-            </summary>
-            <div class="pp-menu" role="listbox" aria-label="How ${esc(l.p.name)} is bought">
-              ${choices.map((c) => `<button type="button" role="option" aria-selected="${c.weeks === chosen.weeks && c.tubs === chosen.tubs}"
-                data-pick-for="${esc(l.p.id)}" data-pick-weeks="${c.weeks}" data-pick-tubs="${c.tubs}">
-                <span class="pp-main">${esc(c.main)}</span>
-                <span class="pp-sub">${esc(c.sub)}</span>
-              </button>`).join("")}
-            </div>
-          </details>` : "";
+          // Name left, price right. Length is a picker, quantity is a stepper:
+          // two small decisions beat a list of nine combinations.
+          const weeksChoice = l.plan ? l.weeks : 0;
+          const tubs = l.plan ? l.tubs : 1;
+          const weekOpts = [
+            { w: 0, main: "One-off" },
+            ...PLAN_WEEKS.map((w) => ({ w, main: `${w}-week subscription${w >= 12 ? " + free week" : ""}` }))
+          ];
+          const chosen = weekOpts.find((o) => o.w === weeksChoice) || weekOpts[0];
+          const tubTotal = weeksChoice ? credited(weeksChoice) * tubs : 1;
+          const ctl = l.p.subscribable ? `<div class="plan-controls">
+            <details class="plan-pick">
+              <summary>
+                <span class="sr-only">Change how ${esc(l.p.name)} is bought</span>
+                <span class="pp-main">${esc(chosen.main)}</span>
+              </summary>
+              <div class="pp-menu" role="listbox" aria-label="How ${esc(l.p.name)} is bought">
+                ${weekOpts.map((o) => `<button type="button" role="option" aria-selected="${o.w === weeksChoice}"
+                  data-pick-for="${esc(l.p.id)}" data-pick-weeks="${o.w}">
+                  <span class="pp-main">${esc(o.main)}</span>
+                </button>`).join("")}
+              </div>
+            </details>
+            ${l.plan ? `<div class="tubs-step" role="group" aria-label="Tubs a week">
+              <button type="button" data-tubs-for="${esc(l.p.id)}" data-tubs-step="-1"
+                aria-label="One tub a week fewer"${tubs <= 1 ? " disabled" : ""}>−</button>
+              <span class="tubs-n"><strong>${tubs}</strong><small>a week</small></span>
+              <button type="button" data-tubs-for="${esc(l.p.id)}" data-tubs-step="1"
+                aria-label="One tub a week more"${tubs >= 3 ? " disabled" : ""}>+</button>
+            </div>` : ""}
+          </div>
+          <p class="line-sub">${weeksChoice >= 12
+            ? `${weeksChoice * tubs} + ${tubs} free · ${money(l.unit)} a tub`
+            : `${tubTotal} ${tubTotal === 1 ? "tub" : "tubs"} · ${money(l.unit)} a tub`}</p>` : "";
           return `<li${l.plan ? ' class="is-plan"' : ""}>
             <div class="line-main">
               <span>${esc(title)}${l.plan ? "" : ` <span class="q">× ${q}</span>`}</span>
@@ -382,11 +388,28 @@
     if (itemsEl) {
       itemsEl.addEventListener("click", (e) => {
         const pick = e.target.closest("[data-pick-for]");
-        if (!pick) return;
-        e.preventDefault();
-        const box = pick.closest("details");
-        if (box) box.open = false;
-        setLineMode(pick.dataset.pickFor, Number(pick.dataset.pickWeeks), Number(pick.dataset.pickTubs));
+        if (pick) {
+          e.preventDefault();
+          const box = pick.closest("details");
+          if (box) box.open = false;
+          const weeks = Number(pick.dataset.pickWeeks);
+          const id = pick.dataset.pickFor;
+          const current = Object.keys(clean(read())).map(parseKey)
+            .find((c) => c.plan && c.id === id);
+          setLineMode(id, weeks, weeks ? (current ? current.tubs : 1) : 0);
+          return;
+        }
+        const step = e.target.closest("[data-tubs-step]");
+        if (step) {
+          e.preventDefault();
+          const id = step.dataset.tubsFor;
+          const delta = Number(step.dataset.tubsStep);
+          const line = Object.keys(clean(read())).map(parseKey)
+            .find((c) => c.plan && c.id === id);
+          if (!line) return;
+          const tubs = Math.min(PLAN_TUBS[PLAN_TUBS.length - 1], Math.max(PLAN_TUBS[0], line.tubs + delta));
+          if (tubs !== line.tubs) setLineMode(id, line.weeks, tubs);
+        }
       });
       // A click anywhere else puts an open picker away.
       document.addEventListener("click", (e) => {

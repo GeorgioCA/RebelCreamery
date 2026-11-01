@@ -564,35 +564,51 @@ th[aria-sort] .th-sort{color:var(--ink)}
 }
 .sum-items li{display:block}
 .line-main{display:flex;justify-content:space-between;gap:14px}
-/* Picker: the closed control and every option carry the plan's own two lines. */
-.plan-pick{position:relative;margin-top:9px}
+/* Picker: length on the left, tubs a week in a stepper beside it. */
+.plan-controls{display:flex;gap:8px;align-items:stretch;margin-top:9px}
+.plan-pick{position:relative;flex:1 1 auto;min-width:0}
 .plan-pick summary{
-  list-style:none;cursor:pointer;position:relative;display:flex;flex-direction:column;gap:1px;
-  padding:7px 32px 7px 10px;border:1px solid var(--line-strong);border-radius:8px;
+  list-style:none;cursor:pointer;position:relative;display:flex;align-items:center;height:34px;
+  padding:0 28px 0 10px;border:1px solid var(--line-strong);border-radius:8px;
   background:var(--paper);
 }
 .plan-pick summary::-webkit-details-marker{display:none}
 .plan-pick summary:focus-visible{outline:2px solid var(--clay);outline-offset:1px}
 .plan-pick summary::after{
-  content:"";position:absolute;right:12px;top:50%;width:6px;height:6px;
+  content:"";position:absolute;right:11px;top:50%;width:6px;height:6px;
   border-right:1.5px solid var(--ink-soft);border-bottom:1.5px solid var(--ink-soft);
   transform:translateY(-70%) rotate(45deg);transition:transform .15s ease;
 }
-.plan-pick[open] summary::after{transform:translateY(-20%) rotate(-135deg)}
-.pp-main{font-size:12.5px;color:var(--ink);line-height:1.35}
+.plan-pick[open] summary::after{transform:translateY(-30%) rotate(-135deg)}
+.pp-main{font-size:12.5px;color:var(--ink);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pp-sub{font-size:11.5px;color:var(--ink-soft);line-height:1.35}
 .pp-menu{
   position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;overflow:auto;max-height:min(64vh,500px);
   background:var(--card);border:1px solid var(--line-strong);border-radius:10px;
-  box-shadow:0 12px 28px rgba(29,42,33,.14);
+  box-shadow:0 12px 28px rgba(29,42,33,.14);min-width:190px;
 }
 .pp-menu button{
   display:flex;flex-direction:column;gap:1px;width:100%;text-align:left;
-  padding:7px 10px;background:none;border:0;font:inherit;cursor:pointer;
+  padding:9px 10px;background:none;border:0;font:inherit;cursor:pointer;
 }
 .pp-menu button + button{border-top:1px solid var(--line)}
 .pp-menu button:hover,.pp-menu button:focus-visible{background:var(--paper-2);outline:none}
 .pp-menu button[aria-selected="true"]{background:rgba(47,68,54,.07)}
+.tubs-step{
+  display:flex;align-items:center;flex:0 0 auto;height:34px;border:1px solid var(--line-strong);
+  border-radius:8px;background:var(--paper);overflow:hidden;
+}
+.tubs-step button{
+  width:29px;height:100%;border:0;background:none;padding:0;cursor:pointer;
+  font-size:15px;line-height:1;color:var(--ink);font-family:inherit;
+}
+.tubs-step button:hover:not(:disabled){background:var(--paper-2)}
+.tubs-step button:disabled{color:#c3c8bf;cursor:default}
+.tubs-step button:focus-visible{outline:2px solid var(--clay);outline-offset:-2px}
+.tubs-n{display:flex;align-items:baseline;gap:3px;padding:0 1px;min-width:40px;justify-content:center}
+.tubs-n strong{font-size:12.5px;font-weight:600;color:var(--ink)}
+.tubs-n small{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+.line-sub{display:block;margin:6px 0 0;font-size:11.5px;color:var(--ink-soft)}
 .sum-items li.is-plan{padding:10px 0 12px}
 .sum-items li.is-plan .line-main span:first-child{color:var(--ink)}
 .plan-status,.etransfer-box{
@@ -630,3 +646,9 @@ th[aria-sort] .th-sort{color:var(--ink)}
 .faq-home{margin-top:56px;padding-top:8px}
 .plan-faq{margin:6px 0 18px}
 .plan-faq .foot-label{margin-bottom:8px}
+
+@media (max-width: 420px){
+  .plan-controls{flex-wrap:wrap}
+  .plan-pick{flex:1 1 100%}
+  .tubs-step{height:32px}
+}
