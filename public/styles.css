@@ -564,14 +564,35 @@ th[aria-sort] .th-sort{color:var(--ink)}
 }
 .sum-items li{display:block}
 .line-main{display:flex;justify-content:space-between;gap:14px}
-.line-plan{display:block;margin-top:9px}
-.line-sub{display:block;font-size:11.5px;letter-spacing:.01em;color:var(--ink-soft);margin-top:1px}
-/* Full width of the line; the global field rule's 6px top margin is dropped. */
-.line-plan select{
-  width:100%;max-width:none;height:34px;margin:0;padding:0 9px;
-  border:1px solid var(--line-strong);border-radius:8px;background:var(--paper);
-  font:inherit;font-size:12.5px;color:var(--ink);
+/* Picker: the closed control and every option carry the plan's own two lines. */
+.plan-pick{position:relative;margin-top:9px}
+.plan-pick summary{
+  list-style:none;cursor:pointer;position:relative;display:flex;flex-direction:column;gap:1px;
+  padding:7px 32px 7px 10px;border:1px solid var(--line-strong);border-radius:8px;
+  background:var(--paper);
 }
+.plan-pick summary::-webkit-details-marker{display:none}
+.plan-pick summary:focus-visible{outline:2px solid var(--clay);outline-offset:1px}
+.plan-pick summary::after{
+  content:"";position:absolute;right:12px;top:50%;width:6px;height:6px;
+  border-right:1.5px solid var(--ink-soft);border-bottom:1.5px solid var(--ink-soft);
+  transform:translateY(-70%) rotate(45deg);transition:transform .15s ease;
+}
+.plan-pick[open] summary::after{transform:translateY(-20%) rotate(-135deg)}
+.pp-main{font-size:12.5px;color:var(--ink);line-height:1.35}
+.pp-sub{font-size:11.5px;color:var(--ink-soft);line-height:1.35}
+.pp-menu{
+  position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;overflow:hidden;
+  background:var(--card);border:1px solid var(--line-strong);border-radius:10px;
+  box-shadow:0 12px 28px rgba(29,42,33,.14);
+}
+.pp-menu button{
+  display:flex;flex-direction:column;gap:1px;width:100%;text-align:left;
+  padding:8px 10px;background:none;border:0;font:inherit;cursor:pointer;
+}
+.pp-menu button + button{border-top:1px solid var(--line)}
+.pp-menu button:hover,.pp-menu button:focus-visible{background:var(--paper-2);outline:none}
+.pp-menu button[aria-selected="true"]{background:rgba(47,68,54,.07)}
 .sum-items li.is-plan{padding:10px 0 12px}
 .sum-items li.is-plan .line-main span:first-child{color:var(--ink)}
 .plan-status,.etransfer-box{

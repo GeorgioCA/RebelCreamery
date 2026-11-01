@@ -249,24 +249,36 @@
           const l = lineFor(key);
           if (!l) return "";
           const title = `${l.p.name} ${l.p.weight}`.trim();
-          // Name left, price right, then the plan detail, then a full-width picker.
-          const ctl = l.p.subscribable ? `<label class="line-plan">
-            <span class="sr-only">How is ${esc(l.p.name)} bought?</span>
-            <select data-plan-for="${esc(l.p.id)}">
-              <option value="">One-off</option>
-              ${PLAN_WEEKS.map((w) => `<option value="${w}"${l.plan && l.weeks === w ? " selected" : ""}>${w} weeks${w === 12 ? " + 1 free" : ""}</option>`).join("")}
-            </select>
-          </label>` : "";
-          const detail = l.plan
-            ? `<span class="line-sub">${l.weeks}-week subscription × ${q}</span>
-               <span class="line-sub">${credited(l.weeks)} tubs · ${money(l.unit)} a tub</span>`
-            : "";
+          // Name left, price right. The picker below carries the same two lines
+          // the plan reads as, so the control explains itself.
+          const choices = [
+            { weeks: 0, main: "One-off", sub: `1 tub · ${money(l.unit)} a tub` },
+            ...PLAN_WEEKS.map((w) => ({
+              weeks: w,
+              main: `${w}-week subscription × 1`,
+              sub: `${credited(w)} tubs · ${money(l.unit)} a tub`
+            }))
+          ];
+          const chosen = choices.find((c) => c.weeks === (l.plan ? l.weeks : 0)) || choices[0];
+          const ctl = l.p.subscribable ? `<details class="plan-pick">
+            <summary>
+              <span class="sr-only">Change how ${esc(l.p.name)} is bought</span>
+              <span class="pp-main">${esc(chosen.main)}</span>
+              <span class="pp-sub">${esc(chosen.sub)}</span>
+            </summary>
+            <div class="pp-menu" role="listbox" aria-label="How ${esc(l.p.name)} is bought">
+              ${choices.map((c) => `<button type="button" role="option" aria-selected="${c.weeks === chosen.weeks}"
+                data-pick-for="${esc(l.p.id)}" data-pick-weeks="${c.weeks}">
+                <span class="pp-main">${esc(c.main)}</span>
+                <span class="pp-sub">${esc(c.sub)}</span>
+              </button>`).join("")}
+            </div>
+          </details>` : "";
           return `<li${l.plan ? ' class="is-plan"' : ""}>
             <div class="line-main">
               <span>${esc(title)}${l.plan ? "" : ` <span class="q">× ${q}</span>`}</span>
               <span>${money(l.price * q)}</span>
             </div>
-            ${detail}
             ${ctl}
           </li>`;
         }).join("")}</ul>`;
@@ -348,23 +360,36 @@
     }
     form.addEventListener("change", () => { paint(); revalidate(); });
     document.addEventListener("cart:change", paint);
-    // Turning a line into a card (and back) happens at checkout, on the line itself.
+    // Turning a line into a subscription (and back) happens at checkout, on the
+    // line itself. Rebuild in place so converting doesn't shuffle the basket.
+    function setLineMode(id, weeks) {
+      const cart = clean(read());
+      const next = {};
+      for (const [k, v] of Object.entries(cart)) {
+        const parsed = parseKey(k);
+        if (parsed.id !== id) { next[k] = v; continue; }
+        next[weeks ? planKey(id, weeks) : id] = 1;
+      }
+      write(next);
+      revalidate();
+    }
     if (itemsEl) {
-      itemsEl.addEventListener("change", (e) => {
-        const sel = e.target.closest("[data-plan-for]");
-        if (!sel) return;
-        const id = sel.dataset.planFor;
-        const weeks = Number(sel.value);
-        const cart = clean(read());
-        // Rebuild in place so converting a line doesn't shuffle the basket.
-        const next = {};
-        for (const [k, v] of Object.entries(cart)) {
-          const parsed = parseKey(k);
-          if (parsed.id !== id) { next[k] = v; continue; }
-          next[weeks ? planKey(id, weeks) : id] = 1;
+      itemsEl.addEventListener("click", (e) => {
+        const pick = e.target.closest("[data-pick-for]");
+        if (!pick) return;
+        e.preventDefault();
+        const box = pick.closest("details");
+        if (box) box.open = false;
+        setLineMode(pick.dataset.pickFor, Number(pick.dataset.pickWeeks));
+      });
+      // A click anywhere else puts an open picker away.
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".plan-pick")) {
+          for (const d of itemsEl.querySelectorAll(".plan-pick[open]")) d.open = false;
         }
-        write(next);
-        revalidate();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") for (const d of itemsEl.querySelectorAll(".plan-pick[open]")) d.open = false;
       });
     }
     paint();
