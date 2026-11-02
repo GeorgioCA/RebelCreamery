@@ -7,14 +7,14 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const DATA_DIR = process.env.DATA_DIR || "./data";
-import { site, delivery, money, artOptions, applySettings, priceOf } from "./lib/catalog.js";
+import { site, delivery, plans, money, artOptions, applySettings, priceOf } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listOrdersFiltered, listProducts, markPaid, printQueueSummary,
   countOrdersFiltered,
   releaseStock, reserveStock, salesSummary, saveProduct, setSoldOut, setStatus, setStock, suggestSku,
   getSettings, saveSettings, listDiscounts, saveDiscount, setDiscountActive, deleteDiscount, useDiscount,
-  PLAN_WEEKS, PLAN_TUBS, planQuote, activatePlans, getSubscription, listSubscriptionsForOrder, getSubscriptionByToken,
+  PLAN_WEEKS, planMaxTubs, planTubsAllowed, planQuote, activatePlans, getSubscription, listSubscriptionsForOrder, getSubscriptionByToken,
   listSubscriptions, collectWeek, undoWeek, cancelSubscriptionsForOrder, subscriptionSummary, expireSubscriptions
 } from "./lib/db.js";
 import {
@@ -106,7 +106,8 @@ app.use(express.static(PUBLIC_DIR, { maxAge: "7d", setHeaders: (res, p) => {
 app.use("/media", express.static(UPLOAD_DIR, { maxAge: "365d", immutable: true, index: false }));
 
 const buckets = new Map();
-function limited(ip, max = 12, windowMs = 60_000) {
+const CHECKOUT_MAX = Number(process.env.CHECKOUT_RATE_MAX) || 12;
+function limited(ip, max = CHECKOUT_MAX, windowMs = 60_000) {
   const now = Date.now();
   const b = buckets.get(ip) || { count: 0, reset: now + windowMs };
   if (now > b.reset) { b.count = 0; b.reset = now + windowMs; }
@@ -286,7 +287,9 @@ app.post("/api/checkout", async (req, res) => {
         // Missing means one a week; an explicit 0 is a mistake, not a default.
         const rawTubs = raw?.tubsPerWeek;
         const planTubs = rawTubs === undefined || rawTubs === null || rawTubs === "" ? 1 : Number(rawTubs);
-        if (!PLAN_TUBS.includes(planTubs)) return res.status(400).json({ error: "Choose 1, 2 or 3 tubs a week." });
+        if (!planTubsAllowed(planTubs)) {
+          return res.status(400).json({ error: `Choose 1 to ${planMaxTubs()} tubs a week.` });
+        }
         if (!p.subscribable) return res.status(400).json({ error: `${p.name} isn't sold as a weekly plan.` });
         const q = planQuote(p, planWeeks, planTubs);
         lines.push({
@@ -728,6 +731,10 @@ app.post("/admin/settings", adminAuth, (req, res) => {
     const n = Number(val(k) || 0);
     if (!Number.isFinite(n) || n < 0) return bad("Delivery amounts must be zero or more.");
   }
+  const maxTubs = Number(val("plan_max_tubs") || 3);
+  if (!Number.isInteger(maxTubs) || maxTubs < 1 || maxTubs > 12) {
+    return bad("Tubs a week must be a whole number from 1 to 12.");
+  }
 
   saveSettings({
     site_name: val("site_name"),
@@ -743,7 +750,8 @@ app.post("/admin/settings", adminAuth, (req, res) => {
     delivery_fee_cents: cents("delivery_fee"),
     free_delivery_over_cents: cents("free_delivery_over"),
     etransfer_email: val("etransfer_email"),
-    licence_text: val("licence_text")
+    licence_text: val("licence_text"),
+    plan_max_tubs: maxTubs
   });
   applySettings(getSettings());
   res.redirect("/admin/settings?saved=1");

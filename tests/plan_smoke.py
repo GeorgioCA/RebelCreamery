@@ -1,7 +1,8 @@
 """Weekly cards as cart lines: mixed baskets, delivery, activation, collect.
 
 Runs against a demo-mode server (DEMO_MODE=1) on PORT, with DATA_DIR pointing at
-a throwaway directory. Exits non-zero on the first failed assertion.
+a throwaway directory and CHECKOUT_RATE_MAX raised (the suite places more than the
+public 12 checkouts a minute). Exits non-zero on the first failed assertion.
 """
 import base64
 import json
@@ -211,6 +212,44 @@ check("three tubs a week checkout", status == 200, f"{status} {out}")
 c6 = connect().execute("SELECT * FROM subscriptions WHERE order_number = (SELECT number FROM orders ORDER BY id DESC LIMIT 1)").fetchone()
 check("12 weeks credits a 13th week of 3", (c6["weeks_credited"], c6["tubs_per_week"]) == (13, 3), (c6["weeks_credited"], c6["tubs_per_week"]))
 check("paid 36 tubs for 39", (c6["weeks_paid"], c6["total_cents"]) == (12, UNIT * 36), (c6["weeks_paid"], c6["total_cents"]))
+
+# --- tubs a week is a setting, not a constant ------------------------------
+SETTINGS = {
+    "site_name": "Rebel Creamery",
+    "site_tagline": "Small-batch dairy, made in Calgary.",
+    "contact_email": "hello@rebelcreamery.ca",
+    "contact_phone": "",
+    "instagram": "",
+    "pickup_location": "1008 9 St SW, Calgary, AB T2R 1B1",
+    "pickup_window": "Saturdays, 9 am - 2 pm",
+    "cutoff_text": "Order by Thursday 6 pm for weekend pickup",
+    "delivery_area": "Calgary city limits",
+    "delivery_windows": "Fridays, 12 - 6 pm",
+    "delivery_fee": "8.00",
+    "free_delivery_over": "40.00",
+    "etransfer_email": "hello@rebelcreamery.ca",
+    "licence_text": "Made in Alberta under provincial food-safety rules.",
+    "plan_max_tubs": "3",
+}
+status, page = get("/admin/settings", auth=True)
+check("settings page has a tubs-a-week field", 'name="plan_max_tubs"' in page)
+check("settings page shows the current maximum", 'name="plan_max_tubs" type="number" step="1" min="1" max="12" value="3"' in page,
+      page[page.find("plan_max_tubs") - 40:page.find("plan_max_tubs") + 160] if "plan_max_tubs" in page else "")
+
+post_form("/admin/settings", {**SETTINGS, "plan_max_tubs": "2"}, auth=True)
+status, out = post("/api/checkout", {"items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 8, "tubsPerWeek": 3}],
+                                     "name": "Over Max", "email": "over@example.com"})
+check("lowering the maximum rejects a bigger card", status == 400, f"{status} {out}")
+check("the error names the new maximum", "1 to 2 tubs" in json.dumps(out), out)
+status, out = post("/api/checkout", {"items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 8, "tubsPerWeek": 2}],
+                                     "name": "At Max", "email": "atmax@example.com"})
+check("a card at the new maximum still sells", status == 200, f"{status} {out}")
+check("the page carries the new maximum", chr(34) + "maxTubs" + chr(34) + ":2" in get("/")[1], "window.__PLAN__")
+
+post_form("/admin/settings", SETTINGS, auth=True)
+status, out = post("/api/checkout", {"items": [{"id": "yogurt-6", "qty": 1, "planWeeks": 8, "tubsPerWeek": 3}],
+                                     "name": "Back To Three", "email": "back3@example.com"})
+check("raising the maximum back lets three through", status == 200, f"{status} {out}")
 
 # --- admin collect --------------------------------------------------------
 status, _ = get("/admin/subscriptions", auth=True)

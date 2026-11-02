@@ -24,8 +24,11 @@
   /* Cart keys: "yogurt-6" for a one-off, "plan:yogurt-6:8:2" for a card that is
      8 weeks of 2 tubs. A card is one line at the block price; its tubs live on
      the server, so its quantity is always 1 and it never counts against stock. */
-  const PLAN_WEEKS = [4, 8, 12];
-  const PLAN_TUBS = [1, 2, 3];
+  // The shop's plan rules come from /admin/settings, not from this file.
+  const PLAN_CFG = window.__PLAN__ || { weeks: [4, 8, 12], maxTubs: 3 };
+  const PLAN_WEEKS = PLAN_CFG.weeks;
+  const MAX_TUBS = Math.max(1, Number(PLAN_CFG.maxTubs) || 3);
+  const tubsOk = (n) => Number.isInteger(n) && n >= 1 && n <= MAX_TUBS;
   const planKey = (id, weeks, tubs = 1) => `plan:${id}:${weeks}:${tubs}`;
   const parseKey = (key) => {
     const m = /^plan:([^:]+):(\d+)(?::(\d+))?$/.exec(key);
@@ -44,7 +47,7 @@
       return { key, plan: false, p, weeks: 0, tubs: 0, qtyMax: p.max, price: unit, unit,
         label: `${p.name} ${p.weight}`.trim() };
     }
-    if (!PLAN_WEEKS.includes(weeks) || !PLAN_TUBS.includes(tubs) || !p.subscribable) return null;
+    if (!PLAN_WEEKS.includes(weeks) || !tubsOk(tubs) || !p.subscribable) return null;
     return { key, plan: true, p, weeks, tubs, qtyMax: 1, price: unit * weeks * tubs, unit,
       label: `${p.name} ${p.weight} — ${weeks}-week subscription × ${tubs}` };
   }
@@ -280,7 +283,7 @@
                 aria-label="One tub a week fewer"${tubs <= 1 ? " disabled" : ""}>−</button>
               <span class="tubs-n"><strong>${tubs}</strong><small>a week</small></span>
               <button type="button" data-tubs-for="${esc(l.p.id)}" data-tubs-step="1"
-                aria-label="One tub a week more"${tubs >= 3 ? " disabled" : ""}>+</button>
+                aria-label="One tub a week more"${tubs >= MAX_TUBS ? " disabled" : ""}>+</button>
             </div>` : ""}
           </div>
           <p class="line-sub">${weeksChoice >= 12
@@ -407,7 +410,7 @@
           const line = Object.keys(clean(read())).map(parseKey)
             .find((c) => c.plan && c.id === id);
           if (!line) return;
-          const tubs = Math.min(PLAN_TUBS[PLAN_TUBS.length - 1], Math.max(PLAN_TUBS[0], line.tubs + delta));
+          const tubs = Math.min(MAX_TUBS, Math.max(1, line.tubs + delta));
           if (tubs !== line.tubs) setLineMode(id, line.weeks, tubs);
         }
       });
