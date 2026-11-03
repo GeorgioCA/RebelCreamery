@@ -175,11 +175,13 @@ stale card orders, label queue, low stock and discount usage.
 - **Read-only.** The connection is `mode=ro` with `PRAGMA query_only`; the store
   never notices it, and stopping the container changes nothing about selling.
 - **Its own domain.** `SERVICE_FQDN_METRICS_9110` in the compose makes Coolify
-  generate a domain for the `metrics` service — set `https://metrics.rebelcreamery.ca:9110`
-  on that service's Domains tab if you want a name of your own.
+  assign a domain to the `metrics` service; this stack points it at
+  `https://metrics.rebelcreamery.ca` (Cloudflare wildcard covers the hostname).
 - **Password or nothing.** `METRICS_PASSWORD` empty returns 503, the same
   fail-closed behaviour as `/admin`. `METRICS_USER` defaults to `owner`.
 - **Prometheus** at `/metrics`, JSON at `/api/summary.json`, liveness at `/health`.
+- **Reachable from the back office.** `METRICS_URL` (default `https://metrics.rebelcreamery.ca`)
+  renders a `Metrics ↗` item in the admin nav; leave it empty to hide the link.
 
 ```sh
 docker build -t creamery-metrics ./metrics

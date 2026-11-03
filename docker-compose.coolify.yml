@@ -26,6 +26,8 @@ services:
       - CONTACT_EMAIL=${CONTACT_EMAIL:-hello@rebelcreamery.ca}
       - CONTACT_PHONE=${CONTACT_PHONE:-}
       - INSTAGRAM=${INSTAGRAM:-}
+      # Back-office link to the separate metrics container. Empty hides the link.
+      - METRICS_URL=${METRICS_URL:-https://metrics.rebelcreamery.ca}
       # Optional. Leave empty to derive the origin from the request (works behind Coolify's proxy).
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
 
