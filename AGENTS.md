@@ -152,6 +152,13 @@ dashboard at `/`, Prometheus text at `/metrics`, and the same numbers as JSON at
   unauthenticated route and carries no business data.
 - **Schema-tolerant.** It reads with `SELECT *` and checks `sqlite_master`, so an older
   database (no `subscriptions` table) renders with zeros instead of crashing.
+- **The admin page is a client, not a second implementation.** `/admin/metrics` (route in
+  `server.js`, `renderMetrics` in `lib/views.js`, fetch in `lib/metrics.js`) renders
+  `/api/summary.json` from the sidecar over the compose network (`METRICS_INTERNAL_URL`,
+  default `http://metrics:9110`) behind the admin session. It never queries SQLite itself —
+  if it did, "what counts as revenue" would exist twice and the pages would drift.
+- The nav item is gated on `site.metricsUrl` (`METRICS_URL`), which also powers the
+  `Standalone dashboard ↗` link; empty hides both.
 - A schema change here does not need a store deploy, but both services build from the
   same repo — pushing to `main` redeploys the whole stack.
 

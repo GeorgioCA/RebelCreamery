@@ -325,6 +325,26 @@ input,textarea,select{min-width:0}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
 .stat span{font-family:var(--serif);font-size:25px;display:block}
 .stat p{margin:2px 0 0;font-size:11.5px;line-height:1.3;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft)}
+
+/* metrics — rendered from the separate container's summary */
+.metrics-chart{margin:0 0 26px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px 10px}
+.metrics-chart svg{width:100%;height:180px;display:block}
+.metrics-chart figcaption{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);padding-top:8px}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:26px}
+.metric-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.metric-card .foot-label{margin:0 0 6px}
+.metric-kv{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.metric-kv:last-child{border-bottom:0}
+.metric-kv b{font-weight:600;text-align:right}
+.metric-table{margin-bottom:26px}
+table.metrics{width:100%;border-collapse:collapse;font-size:13.5px}
+.metrics th{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);background:var(--paper-2)}
+.metrics td{padding:11px 14px;border-bottom:1px solid var(--line)}
+.metrics tr:last-child td{border-bottom:0}
+.metrics th:nth-child(n+2),.metrics td:nth-child(n+2){text-align:right;white-space:nowrap}
+.metrics td:last-child{width:140px;text-align:left}
+.share{height:7px;background:rgba(29,42,33,.09);border-radius:99px;overflow:hidden;min-width:80px}
+.share i{display:block;height:100%;background:var(--moss)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card)}
 table.orders{width:100%;border-collapse:collapse;font-size:13.5px;min-width:860px}
 .orders th{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);background:var(--paper-2)}

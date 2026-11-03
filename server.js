@@ -20,8 +20,9 @@ import {
 import {
   renderHome, renderCheckout, renderSuccess, renderAdmin, renderProductsAdmin,
   renderProductForm, renderLogin, renderOrderAdmin, renderSettings, renderDiscounts, renderRestore, render404,
-  renderSubscriptions, renderFaq
+  renderSubscriptions, renderFaq, renderMetrics
 } from "./lib/views.js";
+import { metricsSummary, metricsExternalUrl } from "./lib/metrics.js";
 import { orderLabel, productLabel, thankYouLabel, labelArtPng, renderOrderLabelHTML, renderProductLabelHTML, renderThankYouLabelHTML } from "./lib/labels.js";
 import { evaluateDiscount } from "./lib/discounts.js";
 import { runBackup, backupEnabled, lastBackup, listBackups, fetchBackup, snapshotBuffer } from "./lib/backup.js";
@@ -701,6 +702,11 @@ app.post("/admin/restore", adminAuth, async (req, res) => {
     console.error(`[restore] failed: ${err.message}`);
     return fail(`Restore failed: ${err.message}`);
   }
+});
+
+app.get("/admin/metrics", adminAuth, async (_req, res) => {
+  const { data, error } = await metricsSummary();
+  res.send(renderMetrics({ summary: data, error, externalUrl: metricsExternalUrl() }));
 });
 
 app.get("/admin/settings", adminAuth, (req, res) => {

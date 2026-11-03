@@ -180,8 +180,11 @@ stale card orders, label queue, low stock and discount usage.
 - **Password or nothing.** `METRICS_PASSWORD` empty returns 503, the same
   fail-closed behaviour as `/admin`. `METRICS_USER` defaults to `owner`.
 - **Prometheus** at `/metrics`, JSON at `/api/summary.json`, liveness at `/health`.
-- **Reachable from the back office.** `METRICS_URL` (default `https://metrics.rebelcreamery.ca`)
-  renders a `Metrics ↗` item in the admin nav; leave it empty to hide the link.
+- **Reachable from the back office.** `/admin/metrics` renders the same numbers inside the
+  admin chrome, behind the admin session — no second login. `METRICS_INTERNAL_URL`
+  (default `http://metrics:9110` on the compose network) is where the store fetches the
+  summary; `METRICS_URL` only powers the `Standalone dashboard ↗` link and hides the nav
+  item when empty. If the sidecar is down the page keeps the last good snapshot and says so.
 
 ```sh
 docker build -t creamery-metrics ./metrics

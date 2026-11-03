@@ -28,6 +28,10 @@ services:
       - INSTAGRAM=${INSTAGRAM:-}
       # Back-office link to the separate metrics container. Empty hides the link.
       - METRICS_URL=${METRICS_URL:-https://metrics.rebelcreamery.ca}
+      # Where this container reaches the metrics sidecar on the compose network.
+      - METRICS_INTERNAL_URL=${METRICS_INTERNAL_URL:-http://metrics:9110}
+      - METRICS_USER=${METRICS_USER:-owner}
+      - METRICS_PASSWORD=${METRICS_PASSWORD:-}
       # Optional. Leave empty to derive the origin from the request (works behind Coolify's proxy).
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
 
