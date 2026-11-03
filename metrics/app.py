@@ -677,7 +677,8 @@ def page(body, payload):
 {banner}
 {body}
 <footer>Separate container, read-only SQLite access. Nothing here writes to the store.
-Values exclude cancelled orders; revenue counts paid, packed and completed only.</footer>
+Revenue counts paid, packed and completed only — a cancelled order still appears in
+the status table, but never in a revenue figure.</footer>
 </div></body></html>"""
 
 
