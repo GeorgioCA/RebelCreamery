@@ -32,6 +32,9 @@ services:
       - METRICS_INTERNAL_URL=${METRICS_INTERNAL_URL:-http://metrics:9110}
       - METRICS_USER=${METRICS_USER:-owner}
       - METRICS_PASSWORD=${METRICS_PASSWORD:-}
+      # Visitor analytics (Umami). Both empty = no script in the page at all.
+      - UMAMI_SCRIPT_URL=${UMAMI_SCRIPT_URL:-}
+      - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
       # Optional. Leave empty to derive the origin from the request (works behind Coolify's proxy).
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
 
@@ -131,5 +134,72 @@ services:
         max-size: "10m"
         max-file: "2"
 
+  # Visitor analytics: Umami + its own Postgres. Cookieless, so no consent
+  # banner; the storefront only gains one async script tag. This is the
+  # lightest of the three asked about — Plausible CE and Swetrix both need
+  # ClickHouse, which is a 1 GB-RAM floor on a box already running five apps.
+  umami-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+
+    environment:
+      - POSTGRES_DB=umami
+      - POSTGRES_USER=umami
+      - POSTGRES_PASSWORD=${UMAMI_DB_PASSWORD}
+
+    volumes:
+      - umami-db:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    restart: unless-stopped
+    init: true
+
+    depends_on:
+      umami-db:
+        condition: service_healthy
+
+    environment:
+      # Coolify fills this from the Domains field; the suffix is the container port.
+      - SERVICE_FQDN_UMAMI_3000
+      - PORT=3000
+      - DATABASE_TYPE=postgresql
+      - DATABASE_URL=postgresql://umami:${UMAMI_DB_PASSWORD}@umami-db:5432/umami
+      - APP_SECRET=${UMAMI_APP_SECRET}
+      - DISABLE_TELEMETRY=1
+      # Cloudflare terminates TLS in front of the box; without this every
+      # visitor looks like a Cloudflare edge IP and the map is useless.
+      - CLIENT_IP_HEADER=cf-connecting-ip
+      - TRUSTED_PROXIES=private,loopback
+
+    expose:
+      - "3000"
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/heartbeat').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
 volumes:
   creamery-data:
+  umami-db:
