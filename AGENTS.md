@@ -162,6 +162,26 @@ dashboard at `/`, Prometheus text at `/metrics`, and the same numbers as JSON at
 - A schema change here does not need a store deploy, but both services build from the
   same repo — pushing to `main` redeploys the whole stack.
 
+## Visitor analytics (Umami)
+
+`umami` + `umami-db` live in the same compose. Cookieless and first-party: no cookie,
+no consent banner, nothing sent to a third party.
+
+- **One script tag, gated.** `layout()` renders it only when `UMAMI_SCRIPT_URL` and
+  `UMAMI_WEBSITE_ID` are set, and never on `admin` pages or the success/order page —
+  that URL carries the customer's order token and would end up in the pageview path.
+- **`CLIENT_IP_HEADER=cf-connecting-ip` is not optional.** Cloudflare terminates TLS;
+  without it every visitor resolves to an edge IP and the country report is fiction.
+- **The dashboard is its own app with its own login.** It cannot borrow the admin
+  session; the back office links to it (`ANALYTICS_URL`, `Visitors ↗`) instead.
+- **Umami v2 posts pageviews to `/api/send`**, not `/api/collect` (v1). A 404 on
+  `/api/collect` is the version, not a broken tracker.
+- **Provisioning through its API needs a browser User-Agent.** Cloudflare answers the
+  default Python/curl UA with `403 error code: 1010`, which reads like an Umami auth
+  failure. Send a Chrome UA; then `POST /api/auth/login` (admin/umami on first boot),
+  `POST /api/users/{id}` with `{password}` to rotate, and `POST /api/websites`
+  `{name, domain}` for the site id.
+
 ## Backups
 
 `lib/backup.js` runs nightly at 3 am mountain (in-process scheduler, date-guarded so a redeploy cannot double-run)

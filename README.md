@@ -195,6 +195,28 @@ docker run --rm -p 9110:9110 -v rebel-creamery_creamery-data:/data \
 Money rules match the store: integer cents, revenue only from `paid` / `packed` /
 `completed`, days bucketed in `America/Edmonton`. Details in `metrics/README.md`.
 
+## Visitor analytics
+
+The same stack runs **Umami** (`umami` + `umami-db`) at
+`https://analytics.rebelcreamery.ca` — first-party, cookieless, so no consent
+banner and no third-party request from the storefront. One async script tag is
+injected when `UMAMI_SCRIPT_URL` and `UMAMI_WEBSITE_ID` are set; it is never
+rendered on `/admin` or the order page (that URL carries the customer's token).
+
+- **Why Umami, not Plausible or Swetrix.** Both of those need ClickHouse. On this
+  box that is a 1 GB-RAM floor plus a third container; Umami is one Node app and
+  a small Postgres, and it answers the same questions (visitors, pages, sources,
+  countries, devices).
+- **Cloudflare is in front**, so `CLIENT_IP_HEADER=cf-connecting-ip` is set or
+  every visitor would look like a Cloudflare edge IP and the country map would
+  be meaningless.
+- **Admin login** is `admin`; the password lives in `UMAMI_ADMIN_PASSWORD` (see
+  the secrets file). Change it there and in Umami together if you rotate it.
+- **Back-office link**: `ANALYTICS_URL` (default `https://analytics.rebelcreamery.ca`)
+  renders a `Visitors ↗` item next to Metrics. Empty hides it.
+- Umami's own database is `umami-db` — separate from `creamery-data`, and it
+  holds analytics only. Losing it costs history, never orders.
+
 
 ## Backups
 

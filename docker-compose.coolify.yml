@@ -35,6 +35,7 @@ services:
       # Visitor analytics (Umami). Both empty = no script in the page at all.
       - UMAMI_SCRIPT_URL=${UMAMI_SCRIPT_URL:-}
       - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID:-}
+      - ANALYTICS_URL=${ANALYTICS_URL:-}
       # Optional. Leave empty to derive the origin from the request (works behind Coolify's proxy).
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
 
