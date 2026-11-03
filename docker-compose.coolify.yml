@@ -81,5 +81,49 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Read-only sidecar: turns the order book into a dashboard and /metrics.
+  # Mounts the same volume, opens it mode=ro, never writes. Needs no Stripe,
+  # no Resend, no admin password — just a password to look at the numbers.
+  metrics:
+    build:
+      context: ./metrics
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+
+    environment:
+      # Coolify turns this into a domain for THIS service (see the Domains tab).
+      - SERVICE_FQDN_METRICS_9110
+      - PORT=9110
+      - DATA_DIR=/data
+      - METRICS_USER=${METRICS_USER:-owner}
+      # Empty password = 503, same fail-closed rule as /admin.
+      - METRICS_PASSWORD=${METRICS_PASSWORD:-}
+      - SITE_NAME=${SITE_NAME:-Rebel Creamery}
+      - TZ_NAME=${TZ_NAME:-America/Edmonton}
+      - CACHE_SECONDS=${CACHE_SECONDS:-15}
+      - LOW_STOCK=${LOW_STOCK:-3}
+
+    volumes:
+      # Read-write mount on purpose: SQLite needs the -shm file to read a WAL
+      # database. The connection itself is mode=ro + PRAGMA query_only.
+      - creamery-data:/data
+
+    expose:
+      - "9110"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','9110')+'/health',timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
 volumes:
   creamery-data:

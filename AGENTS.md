@@ -39,6 +39,7 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 | `lib/assets.js` | Content-hash query strings for CSS/JS |
 | `public/` | `styles.css`, `app.js` (cart, checkout, address autofill) |
 | `print-agent/` | Standalone Python label daemon (Linux, macOS or Windows — see its README) |
+| `metrics/` | Separate read-only container: dashboard, `/metrics`, `/api/summary.json` |
 | `tests/` | Playwright and smoke tests, run by hand |
 | `data/` | SQLite + uploaded photos. **Gitignored. This is the business record.** |
 
@@ -132,6 +133,27 @@ Stripe needs a coupon object for a discount, so a one-shot `amount_off` coupon i
 `/api/store.json`, and mirrored in `public/app.js`. Cards render the regular price struck through next to the
 sale price; the admin product form rejects a sale price that is not below the regular price. Order lines
 snapshot the charged price, so ending a sale never rewrites history.
+
+## Metrics (separate container)
+
+`metrics/` is a second service in `docker-compose.coolify.yml`. It mounts
+`creamery-data`, opens `store.db` with `mode=ro` and `PRAGMA query_only`, and serves a
+dashboard at `/`, Prometheus text at `/metrics`, and the same numbers as JSON at
+`/api/summary.json`. Stdlib Python only — no dependencies, no build step of its own.
+
+- **It must never write.** No `INSERT`/`UPDATE`/`PRAGMA` other than `query_only`; the
+  store owns the file and the metrics container is a passenger. The volume is mounted
+  read-write only because SQLite needs the `-shm` file to read a WAL database.
+- **Money rules are copied, not imported.** Revenue = `paid` + `packed` + `completed`.
+  Prepaid-plan figures mirror `subscriptionSummary()` in `lib/db.js` — change one,
+  change the other.
+- **Days bucket in `America/Edmonton`**, not UTC, so a Friday-night order lands on Friday.
+- **Fail closed.** Empty `METRICS_PASSWORD` → 503, like `/admin`. `/health` is the only
+  unauthenticated route and carries no business data.
+- **Schema-tolerant.** It reads with `SELECT *` and checks `sqlite_master`, so an older
+  database (no `subscriptions` table) renders with zeros instead of crashing.
+- A schema change here does not need a store deploy, but both services build from the
+  same repo — pushing to `main` redeploys the whole stack.
 
 ## Backups
 

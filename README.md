@@ -165,6 +165,32 @@ Use **`docker-compose.coolify.yml`** — not the dev `docker-compose.yml`, which
 
 No database container, no migrations to run, no build step beyond the Dockerfile.
 
+## Metrics
+
+The stack runs a second container, `metrics/`, that reads the same SQLite file and
+shows the numbers: revenue by window, AOV, 30-day trend, status board, best sellers,
+prepaid plans (tubs still owed, money taken but not earned), e-Transfers waiting,
+stale card orders, label queue, low stock and discount usage.
+
+- **Read-only.** The connection is `mode=ro` with `PRAGMA query_only`; the store
+  never notices it, and stopping the container changes nothing about selling.
+- **Its own domain.** `SERVICE_FQDN_METRICS_9110` in the compose makes Coolify
+  generate a domain for the `metrics` service — set `https://metrics.rebelcreamery.ca:9110`
+  on that service's Domains tab if you want a name of your own.
+- **Password or nothing.** `METRICS_PASSWORD` empty returns 503, the same
+  fail-closed behaviour as `/admin`. `METRICS_USER` defaults to `owner`.
+- **Prometheus** at `/metrics`, JSON at `/api/summary.json`, liveness at `/health`.
+
+```sh
+docker build -t creamery-metrics ./metrics
+docker run --rm -p 9110:9110 -v rebel-creamery_creamery-data:/data \
+  -e METRICS_PASSWORD=… creamery-metrics
+```
+
+Money rules match the store: integer cents, revenue only from `paid` / `packed` /
+`completed`, days bucketed in `America/Edmonton`. Details in `metrics/README.md`.
+
+
 ## Backups
 
 The entire business state is `/data/store.db` (plus `-wal`/`-shm`). Copy it nightly:
@@ -187,6 +213,7 @@ public/styles.css      the whole design system
 public/app.js          cart, drawer, checkout form
 public/fonts/          Fraunces + Inter, self-hosted (no Google request at runtime)
 scripts/               restart-preview.sh — local server on :3100
+metrics/               separate read-only container: dashboard, /metrics, /api/summary.json
 tests/                 e2e.py (Playwright checkout flow), shot.py (screenshots), check.py (layout probes)
 ```
 
