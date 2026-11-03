@@ -39,7 +39,7 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 | `lib/assets.js` | Content-hash query strings for CSS/JS |
 | `public/` | `styles.css`, `app.js` (cart, checkout, address autofill) |
 | `print-agent/` | Standalone Python label daemon (Linux, macOS or Windows — see its README) |
-| `metrics/` | Separate read-only container: dashboard, `/metrics`, `/api/summary.json` |
+| `metrics/` | Separate read-only container: dashboard, profit, `/metrics`, `/api/summary.json` (costs in `COSTS.md`) |
 | `tests/` | Playwright and smoke tests, run by hand |
 | `data/` | SQLite + uploaded photos. **Gitignored. This is the business record.** |
 

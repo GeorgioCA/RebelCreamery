@@ -805,14 +805,15 @@ app.get("/admin", adminAuth, (req, res) => {
 });
 
 app.get("/admin/products.csv", adminAuth, (req, res) => {
-  const rows = [["sku", "name", "weight", "price_cad", "sale_cad", "stock", "status", "sort"]];
+  const rows = [["sku", "name", "weight", "price_cad", "sale_cad", "unit_cost_cad", "stock", "status", "sort"]];
   for (const p of listProducts()) {
     rows.push([
       p.sku || "",
       p.name,
       p.weight,
       (p.priceCents / 100).toFixed(2),
-      p.saleCents ? (p.saleCents / 100).toFixed(2) : "",
+      (p.saleCents ? (p.saleCents / 100).toFixed(2) : ""),
+      ((p.costCents || 0) / 100).toFixed(2),
       String(p.stock ?? 0),
       p.soldOut ? "sold out" : p.active ? "live" : "hidden",
       String(p.sortOrder ?? "")
@@ -842,6 +843,7 @@ function parseProductBody(body) {
   const cents = Math.round(Number(String(body.price || "").replace(/[^0-9.]/g, "")) * 100);
   const saleRaw = String(body.sale || "").trim();
   const saleCents = saleRaw ? Math.round(Number(saleRaw.replace(/[^0-9.]/g, "")) * 100) : null;
+  const costCents = Math.round(Number(String(body.cost || "").replace(/[^0-9.]/g, "")) * 100);
   return {
     id: body.id || "",
     sku: String(body.sku || "").toUpperCase().replace(/[^A-Z0-9._-]/g, "").slice(0, 24),
@@ -849,6 +851,7 @@ function parseProductBody(body) {
     weight: String(body.weight || "").trim(),
     priceCents: Number.isFinite(cents) ? Math.max(0, cents) : NaN,
     saleCents: saleCents === null ? null : Number.isFinite(saleCents) ? Math.max(0, saleCents) : NaN,
+    costCents: Number.isFinite(costCents) ? Math.max(0, costCents) : 0,
     note: String(body.note || "").trim(),
     tags: String(body.tags || "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 8),
     art: ART_IDS.includes(body.art) ? body.art : "generic",

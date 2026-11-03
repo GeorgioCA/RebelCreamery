@@ -24,6 +24,9 @@ Environment
     TZ_NAME           business timezone             (default America/Edmonton)
     CACHE_SECONDS     how long a computed summary is reused (default 15)
     LOW_STOCK         stock at or below this is "low"       (default 3)
+    STRIPE_FEE_PERCENT     card processing percent        (default 2.9)
+    STRIPE_FEE_FIXED_CENTS card processing fixed fee      (default 30)
+    MONTHLY_OVERHEAD_CENTS fixed monthly overhead         (default 0)
 """
 
 import base64
@@ -46,6 +49,11 @@ SITE_NAME = os.environ.get("SITE_NAME", "Rebel Creamery")
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "America/Edmonton"))
 CACHE_SECONDS = float(os.environ.get("CACHE_SECONDS", "15"))
 LOW_STOCK = int(os.environ.get("LOW_STOCK", "3"))
+# Card processing is an estimate on paid card orders; overhead is prorated from
+# a monthly figure so "net profit" is net of more than just ingredients.
+STRIPE_FEE_PERCENT = float(os.environ.get("STRIPE_FEE_PERCENT", "2.9"))
+STRIPE_FEE_FIXED_CENTS = int(os.environ.get("STRIPE_FEE_FIXED_CENTS", "30"))
+MONTHLY_OVERHEAD_CENTS = int(os.environ.get("MONTHLY_OVERHEAD_CENTS", "0"))
 
 # Money is only real once it has been paid. Cancelled orders never count, and
 # pending card / e-Transfer orders are shown separately as money owed.
@@ -102,18 +110,66 @@ def local_date(value):
 # summary
 # --------------------------------------------------------------------------- #
 
-def window_stats(orders, start=None, days=None):
+def item_units(item):
+    """Selling units behind an order line.
+
+    A weekly plan is one line at one price covering several weeks of tubs, so
+    quantity alone would count one tub per card. A 12-week card is credited a
+    13th week, and those tubs cost money even though they carry no revenue.
+    """
+    qty = int(item.get("qty") or 0)
+    weeks = int(item.get("plan_weeks") or 0)
+    if weeks > 0:
+        credited = weeks + 1 if weeks >= 12 else weeks
+        return qty * credited * max(1, int(item.get("plan_tubs") or 1))
+    return qty
+
+
+def line_cost_cents(item, product_by_id):
+    """Cost per unit, from the line's snapshot; fall back to the product."""
+    own = int(item.get("cost_cents") or 0)
+    if own:
+        return own
+    product = product_by_id.get(item.get("product_id")) or {}
+    return int(product.get("cost_cents") or 0)
+
+
+def order_cogs_cents(order, items_by_order, product_by_id):
+    return sum(item_units(i) * line_cost_cents(i, product_by_id)
+               for i in items_by_order.get(order["id"], []))
+
+
+def card_fee_cents(order):
+    if not str(order.get("payment") or "").lower().startswith("card"):
+        return 0
+    total = int(order.get("total_cents") or 0)
+    return round(total * STRIPE_FEE_PERCENT / 100) + STRIPE_FEE_FIXED_CENTS
+
+
+def window_stats(orders, items_by_order, product_by_id, start=None, days=30):
     if start is not None:
         chosen = [o for o in orders if o["_date"] and o["_date"] >= start]
     else:
         chosen = list(orders)
     paid = [o for o in chosen if o["status"] in REVENUE_STATUSES]
     revenue = sum(int(o["total_cents"] or 0) for o in paid)
+    cogs = sum(order_cogs_cents(o, items_by_order, product_by_id) for o in paid)
+    fees = sum(card_fee_cents(o) for o in paid)
+    overhead = round(MONTHLY_OVERHEAD_CENTS * days / 30)
+    gross = revenue - cogs
+    net = gross - fees - overhead
     return {
         "orders": len(chosen),
         "paid_orders": len(paid),
         "revenue_cents": revenue,
         "aov_cents": round(revenue / len(paid)) if paid else 0,
+        "cogs_cents": cogs,
+        "gross_profit_cents": gross,
+        "gross_margin": round(100 * gross / revenue, 1) if revenue else 0,
+        "fees_cents": fees,
+        "overhead_cents": overhead,
+        "net_profit_cents": net,
+        "net_margin": round(100 * net / revenue, 1) if revenue else 0,
     }
 
 
@@ -174,12 +230,33 @@ def summarise():
         o["_date"] = local_date(o.get("created_at"))
         o["status"] = (o.get("status") or "unknown").strip()
 
+    # ---- cost of goods ----------------------------------------------------
+    product_by_id = {p.get("id"): p for p in product_rows}
+    items_by_order = {}
+    for item in item_rows:
+        items_by_order.setdefault(item.get("order_id"), []).append(item)
+
+    first_days = [o["_date"] for o in order_rows if o["_date"]]
+    span_days = max(1, (today - min(first_days)).days + 1) if first_days else 1
+    active_products = [p for p in product_rows if p.get("active", 1)]
+    with_cost = [p for p in active_products if int(p.get("cost_cents") or 0) > 0]
+    payload["costs"] = {
+        "monthly_overhead_cents": MONTHLY_OVERHEAD_CENTS,
+        "stripe_fee_percent": STRIPE_FEE_PERCENT,
+        "stripe_fee_fixed_cents": STRIPE_FEE_FIXED_CENTS,
+        "products_missing_cost": [
+            p.get("name") for p in active_products if not int(p.get("cost_cents") or 0)
+        ],
+        "products_costed": len(with_cost),
+        "products_total": len(active_products),
+    }
+
     # ---- headline windows -------------------------------------------------
     payload["windows"] = {
-        "today": window_stats(order_rows, start=today),
-        "7d": window_stats(order_rows, start=today - timedelta(days=6)),
-        "30d": window_stats(order_rows, start=today - timedelta(days=29)),
-        "all": window_stats(order_rows),
+        "today": window_stats(order_rows, items_by_order, product_by_id, start=today, days=1),
+        "7d": window_stats(order_rows, items_by_order, product_by_id, start=today - timedelta(days=6), days=7),
+        "30d": window_stats(order_rows, items_by_order, product_by_id, start=today - timedelta(days=29), days=30),
+        "all": window_stats(order_rows, items_by_order, product_by_id, days=span_days),
     }
 
     # ---- 30-day trend -----------------------------------------------------
@@ -187,16 +264,23 @@ def summarise():
     for o in order_rows:
         if not o["_date"] or o["_date"] < today - timedelta(days=29):
             continue
-        bucket = by_day.setdefault(o["_date"], {"orders": 0, "revenue_cents": 0})
+        bucket = by_day.setdefault(o["_date"], {"orders": 0, "revenue_cents": 0,
+                                                "cogs_cents": 0, "gross_profit_cents": 0})
         bucket["orders"] += 1
         if o["status"] in REVENUE_STATUSES:
             bucket["revenue_cents"] += int(o["total_cents"] or 0)
+            cogs = order_cogs_cents(o, items_by_order, product_by_id)
+            bucket["cogs_cents"] += cogs
+            bucket["gross_profit_cents"] += int(o["total_cents"] or 0) - cogs
     trend = []
     for i in range(29, -1, -1):
         day = today - timedelta(days=i)
-        bucket = by_day.get(day, {"orders": 0, "revenue_cents": 0})
+        bucket = by_day.get(day, {"orders": 0, "revenue_cents": 0,
+                                  "cogs_cents": 0, "gross_profit_cents": 0})
         trend.append({"date": day.isoformat(), "orders": bucket["orders"],
-                      "revenue_cents": bucket["revenue_cents"]})
+                      "revenue_cents": bucket["revenue_cents"],
+                      "cogs_cents": bucket["cogs_cents"],
+                      "gross_profit_cents": bucket["gross_profit_cents"]})
     payload["trend"] = trend
     payload["trend_peak_cents"] = max([t["revenue_cents"] for t in trend] + [0])
 
@@ -221,7 +305,6 @@ def summarise():
         payload[key] = sorted(seen.values(), key=lambda e: -e["count"])
 
     # ---- products ---------------------------------------------------------
-    product_by_id = {p.get("id"): p for p in product_rows}
     revenue_order_ids = {o["id"] for o in order_rows if o["status"] in REVENUE_STATUSES}
     since_30 = today - timedelta(days=29)
     date_by_order = {o["id"]: o["_date"] for o in order_rows}
@@ -239,13 +322,21 @@ def summarise():
             "sku": item.get("sku") or "",
             "units": 0,
             "revenue_cents": 0,
+            "cogs_cents": 0,
         })
-        entry["units"] += int(item.get("qty") or 0)
+        units = item_units(item)
+        entry["units"] += units
         entry["revenue_cents"] += int(item.get("price_cents") or 0) * int(item.get("qty") or 0)
+        entry["cogs_cents"] += units * line_cost_cents(item, product_by_id)
     top = sorted(sold.values(), key=lambda e: (-e["revenue_cents"], -e["units"]))
     top_total = sum(e["revenue_cents"] for e in top) or 1
     for entry in top:
         entry["share"] = round(100 * entry["revenue_cents"] / top_total, 1)
+        entry["unit_cost_cents"] = (round(entry["cogs_cents"] / entry["units"])
+                                    if entry["units"] else 0)
+        entry["gross_profit_cents"] = entry["revenue_cents"] - entry["cogs_cents"]
+        entry["margin"] = (round(100 * entry["gross_profit_cents"] / entry["revenue_cents"], 1)
+                           if entry["revenue_cents"] else 0)
     payload["top_products"] = top[:10]
 
     # ---- subscriptions (mirrors subscriptionSummary() in lib/db.js) -------
@@ -372,6 +463,16 @@ def esc(value):
     return html.escape(str(value if value is not None else ""))
 
 
+def share(part, whole):
+    return f"{round(100 * part / whole)}%" if whole else "—"
+
+
+def cost_cell(cents):
+    if not cents:
+        return '<span class="warn">not set</span>'
+    return money(cents)
+
+
 def ago(seconds):
     if seconds is None:
         return "never"
@@ -425,6 +526,18 @@ def prometheus(payload):
            [([("window", w)], v["paid_orders"]) for w, v in payload["windows"].items()])
     metric("creamery_aov_cents", "gauge", "Average order value on paid orders (cents).",
            [([("window", w)], v["aov_cents"]) for w, v in payload["windows"].items()])
+    metric("creamery_cogs_cents", "gauge", "Cost of goods sold in the window (cents).",
+           [([("window", w)], v["cogs_cents"]) for w, v in payload["windows"].items()])
+    metric("creamery_gross_profit_cents", "gauge", "Revenue minus cost of goods (cents).",
+           [([("window", w)], v["gross_profit_cents"]) for w, v in payload["windows"].items()])
+    metric("creamery_card_fees_cents", "gauge", "Estimated card processing fees (cents).",
+           [([("window", w)], v["fees_cents"]) for w, v in payload["windows"].items()])
+    metric("creamery_overhead_cents", "gauge", "Prorated fixed overhead (cents).",
+           [([("window", w)], v["overhead_cents"]) for w, v in payload["windows"].items()])
+    metric("creamery_net_profit_cents", "gauge", "Revenue minus COGS, fees and overhead (cents).",
+           [([("window", w)], v["net_profit_cents"]) for w, v in payload["windows"].items()])
+    metric("creamery_net_margin_ratio", "gauge", "Net profit as a share of revenue (0-1).",
+           [([("window", w)], round(v["net_margin"] / 100, 4)) for w, v in payload["windows"].items()])
 
     metric("creamery_orders_by_status", "gauge", "Orders by status (all time).",
            [([("status", s["status"])], s["count"]) for s in payload["status"]])
@@ -507,6 +620,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 footer{margin-top:38px;color:var(--soft);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
 footer a{color:var(--clay)}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.scroll{overflow-x:auto}
+.scroll table{min-width:720px}
 """
 
 
@@ -525,7 +640,9 @@ def bar_chart(trend, peak):
         x = i * slot
         y = height - 22 - h
         colour = "#2f4436" if day["revenue_cents"] else "rgba(29,42,33,.12)"
-        label = f"{day['date']} · {money(day['revenue_cents'])} · {day['orders']} order{'s' if day['orders'] != 1 else ''}"
+        label = (f"{day['date']} · {money(day['revenue_cents'])} revenue · "
+                 f"{money(day['cogs_cents'])} COGS · {money(day['gross_profit_cents'])} gross · "
+                 f"{day['orders']} order{'s' if day['orders'] != 1 else ''}")
         bars.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" '
                     f'rx="2.5" fill="{colour}"><title>{esc(label)}</title></rect>')
     ticks = "".join(
@@ -545,29 +662,48 @@ def render_html(payload):
         return page(body, payload)
 
     w = payload["windows"]
+    w30 = w["30d"]
     subs = payload["subscriptions"]
     ops = payload["ops"]
+    costs = payload["costs"]
+    overhead_note = "" if costs["monthly_overhead_cents"] else " · before overhead"
+    missing_note = ""
+    if costs["products_missing_cost"]:
+        missing_note = (f'<p class="sub warn">No unit cost for '
+                        f'{esc(", ".join(costs["products_missing_cost"]))} — COGS and '
+                        f'profit are understated until it is set in the product form.</p>')
 
     tiles = f"""
     <div class="tiles">
       <div class="tile"><div class="label">Revenue · 30 days</div>
-        <div class="value">{money(w['30d']['revenue_cents'])}</div>
-        <div class="note">{w['30d']['paid_orders']} paid orders</div></div>
+        <div class="value">{money(w30['revenue_cents'])}</div>
+        <div class="note">{w30['paid_orders']} paid orders</div></div>
+      <div class="tile"><div class="label">Cost of goods · 30 days</div>
+        <div class="value">{money(w30['cogs_cents'])}</div>
+        <div class="note">{share(w30['cogs_cents'], w30['revenue_cents'])} of revenue</div></div>
+      <div class="tile"><div class="label">Gross profit · 30 days</div>
+        <div class="value">{money(w30['gross_profit_cents'])}</div>
+        <div class="note">{w30['gross_margin']}% margin</div></div>
+      <div class="tile"><div class="label">Net profit · 30 days</div>
+        <div class="value">{money(w30['net_profit_cents'])}</div>
+        <div class="note">{w30['net_margin']}% margin{overhead_note}</div></div>
       <div class="tile"><div class="label">Average order</div>
-        <div class="value">{money(w['30d']['aov_cents'])}</div>
+        <div class="value">{money(w30['aov_cents'])}</div>
         <div class="note">30 days · paid only</div></div>
       <div class="tile"><div class="label">Open orders</div>
         <div class="value">{ops['open_orders']['count']}</div>
         <div class="note">{money(ops['open_orders']['cents'])} not finished</div></div>
-      <div class="tile"><div class="label">Repeat customers</div>
-        <div class="value">{payload['customers']['repeat']}</div>
-        <div class="note">of {payload['customers']['unique']} buyers</div></div>
     </div>"""
 
     ranges = "".join(
         f"<tr><td>{label}</td><td class='num'>{money(v['revenue_cents'])}</td>"
-        f"<td class='num'>{v['orders']}</td><td class='num'>{v['paid_orders']}</td>"
-        f"<td class='num'>{money(v['aov_cents'])}</td></tr>"
+        f"<td class='num'>{money(v['cogs_cents'])}</td>"
+        f"<td class='num'>{money(v['gross_profit_cents'])}</td>"
+        f"<td class='num'>{money(v['fees_cents'])}</td>"
+        f"<td class='num'>{money(v['overhead_cents'])}</td>"
+        f"<td class='num'><b>{money(v['net_profit_cents'])}</b></td>"
+        f"<td class='num'>{v['net_margin']}%</td>"
+        f"<td class='num'>{v['paid_orders']}</td></tr>"
         for label, v in (("Today", w["today"]), ("Last 7 days", w["7d"]),
                          ("Last 30 days", w["30d"]), ("All time", w["all"]))
     )
@@ -582,11 +718,16 @@ def render_html(payload):
         top_rows = "".join(
             f"<tr><td>{esc(p['name'])}</td><td class='num'>{p['units']}</td>"
             f"<td class='num'>{money(p['revenue_cents'])}</td>"
-            f"<td><div class='bar'><i style='width:{max(2, p['share']):.0f}%'></i></div></td></tr>"
+            f"<td class='num'>{cost_cell(p['unit_cost_cents'])}</td>"
+            f"<td class='num'>{money(p['cogs_cents'])}</td>"
+            f"<td class='num'>{money(p['gross_profit_cents'])}</td>"
+            f"<td class='num'>{p['margin']}%</td></tr>"
             for p in payload["top_products"]
         )
         top_table = (f"<table><thead><tr><th>Product</th><th class='num'>Units</th>"
-                     f"<th class='num'>Revenue</th><th>Share</th></tr></thead><tbody>{top_rows}</tbody></table>")
+                     f"<th class='num'>Revenue</th><th class='num'>Cost/unit</th>"
+                     f"<th class='num'>COGS</th><th class='num'>Gross profit</th>"
+                     f"<th class='num'>Margin</th></tr></thead><tbody>{top_rows}</tbody></table>")
     else:
         top_table = "<p class='sub'>No paid orders in the last 30 days.</p>"
 
@@ -626,9 +767,12 @@ def render_html(payload):
       <div class="legend"><span><span class="dot" style="background:#2f4436"></span>Paid revenue per day</span>
       <span>Peak {money(payload['trend_peak_cents'])}</span></div></div>
 
-    <h2>Windows</h2>
-    <table><thead><tr><th>Period</th><th class="num">Revenue</th><th class="num">Orders</th>
-      <th class="num">Paid</th><th class="num">AOV</th></tr></thead><tbody>{ranges}</tbody></table>
+    <h2>Profit</h2>
+    {missing_note}
+    <div class="scroll"><table><thead><tr><th>Period</th><th class="num">Revenue</th>
+      <th class="num">COGS</th><th class="num">Gross</th><th class="num">Card fees</th>
+      <th class="num">Overhead</th><th class="num">Net profit</th><th class="num">Net margin</th>
+      <th class="num">Paid orders</th></tr></thead><tbody>{ranges}</tbody></table></div>
 
     <h2>What is in the book</h2>
     <div class="grid2">
@@ -637,13 +781,16 @@ def render_html(payload):
       <div class="card">
         <div class="kv"><span>Payment</span><b>{payment}</b></div>
         <div class="kv"><span>Fulfilment</span><b>{method}</b></div>
+        <div class="kv"><span>Repeat customers</span><b>{payload['customers']['repeat']} of {payload['customers']['unique']}</b></div>
+        <div class="kv"><span>Unit costs set</span><b class="{'warn' if costs['products_missing_cost'] else ''}">{costs['products_costed']} of {costs['products_total']} SKUs</b></div>
+        <div class="kv"><span>Fixed overhead</span><b>{money(costs['monthly_overhead_cents'])}/mo</b></div>
         <div class="kv"><span>Last order</span><b>{ago(payload.get('last_order_age_seconds'))}</b></div>
         <div class="kv"><span>Database</span><b>{payload['db'].get('size_bytes', 0) / 1024:.0f} KB · read-only</b></div>
       </div>
     </div>
 
-    <h2>Best sellers · 30 days</h2>
-    {top_table}
+    <h2>Profit by product · 30 days</h2>
+    <div class="scroll">{top_table}</div>
 
     <h2>Prepaid plans &amp; operations</h2>
     <div class="grid2">{sub_card}{ops_card}</div>
@@ -678,7 +825,10 @@ def page(body, payload):
 {body}
 <footer>Separate container, read-only SQLite access. Nothing here writes to the store.
 Revenue counts paid, packed and completed only — a cancelled order still appears in
-the status table, but never in a revenue figure.</footer>
+the status table, but never in a revenue figure. COGS is ingredients and packaging per
+SKU, snapshotted onto each order line; card fees are estimated at
+{STRIPE_FEE_PERCENT:g}% + {money(STRIPE_FEE_FIXED_CENTS)} per card order; overhead is a
+monthly figure prorated across the window.</footer>
 </div></body></html>"""
 
 

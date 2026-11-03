@@ -168,9 +168,16 @@ No database container, no migrations to run, no build step beyond the Dockerfile
 ## Metrics
 
 The stack runs a second container, `metrics/`, that reads the same SQLite file and
-shows the numbers: revenue by window, AOV, 30-day trend, status board, best sellers,
-prepaid plans (tubs still owed, money taken but not earned), e-Transfers waiting,
-stale card orders, label queue, low stock and discount usage.
+shows the numbers: revenue by window, COGS and net profit, AOV, 30-day trend, status
+board, profit by product, prepaid plans (tubs still owed, money taken but not earned),
+e-Transfers waiting, stale card orders, label queue, low stock and discount usage.
+
+Each product carries a **unit cost** (ingredients + packaging), editable in
+`/admin/products`. Orders snapshot that cost on the line, so changing a recipe never
+rewrites an old order's margin. Profit is `revenue − COGS − card fees − prorated
+overhead`; overhead is `MONTHLY_OVERHEAD_CENTS` (default 0, and the dashboard says
+"before overhead" until it is set). The seeded costs and their assumptions are in
+`metrics/COSTS.md`.
 
 - **Read-only.** The connection is `mode=ro` with `PRAGMA query_only`; the store
   never notices it, and stopping the container changes nothing about selling.
@@ -193,7 +200,8 @@ docker run --rm -p 9110:9110 -v rebel-creamery_creamery-data:/data \
 ```
 
 Money rules match the store: integer cents, revenue only from `paid` / `packed` /
-`completed`, days bucketed in `America/Edmonton`. Details in `metrics/README.md`.
+`completed`, days bucketed in `America/Edmonton`. Details in `metrics/README.md`;
+cost derivation in `metrics/COSTS.md`.
 
 ## Visitor analytics
 

@@ -29,6 +29,14 @@ Money is integer cents, read the same way the store writes it.
 - **Revenue** counts orders in `paid`, `packed` or `completed` only. `pending`
   (card, unpaid), `awaiting_etransfer` and `cancelled` are shown separately.
 - **AOV** is revenue ÷ paid orders.
+- **COGS** is Σ units × the unit cost snapshotted on the order line; ingredients
+  and packaging only. `metrics/COSTS.md` has the derivation and the excluded costs.
+- **Gross profit** is revenue − COGS. **Net profit** also takes out card fees
+  (`STRIPE_FEE_PERCENT`, `STRIPE_FEE_FIXED_CENTS`) and
+  `MONTHLY_OVERHEAD_CENTS` × days/30. With overhead unset the dashboard labels
+  the figure "before overhead".
+- **Plan lines** count `weeks_credited × tubs_per_week`, so the free 13th week of
+  a 12-week card shows up as cost.
 - **Windows**: today, 7 days, 30 days, all time, bucketed in
   `America/Edmonton` — not UTC — so a Friday-night order lands on Friday.
 - **Prepaid plans** mirror `subscriptionSummary()`: open cards, tubs still owed,
@@ -46,6 +54,12 @@ creamery_up
 creamery_revenue_cents{window="30d"}
 creamery_orders{window="7d"}
 creamery_aov_cents{window="30d"}
+creamery_cogs_cents{window="30d"}
+creamery_gross_profit_cents{window="30d"}
+creamery_card_fees_cents{window="30d"}
+creamery_overhead_cents{window="30d"}
+creamery_net_profit_cents{window="30d"}
+creamery_net_margin_ratio{window="30d"}
 creamery_orders_by_status{status="paid"}
 creamery_awaiting_etransfer
 creamery_subscription_tubs_outstanding

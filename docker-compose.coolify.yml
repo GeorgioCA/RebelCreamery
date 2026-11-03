@@ -113,6 +113,11 @@ services:
       - TZ_NAME=${TZ_NAME:-America/Edmonton}
       - CACHE_SECONDS=${CACHE_SECONDS:-15}
       - LOW_STOCK=${LOW_STOCK:-3}
+      # Profit: card processing estimate and a monthly overhead to prorate.
+      # Leave overhead at 0 to report net profit before fixed costs.
+      - STRIPE_FEE_PERCENT=${STRIPE_FEE_PERCENT:-2.9}
+      - STRIPE_FEE_FIXED_CENTS=${STRIPE_FEE_FIXED_CENTS:-30}
+      - MONTHLY_OVERHEAD_CENTS=${MONTHLY_OVERHEAD_CENTS:-0}
 
     volumes:
       # Read-write mount on purpose: SQLite needs the -shm file to read a WAL
