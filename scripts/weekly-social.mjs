@@ -23,6 +23,17 @@ const FORCED_PRODUCT = argProduct > -1 ? String(process.argv[argProduct + 1]) : 
 
 const MOSS = "#2f4436", CREAM = "#fbf7ef", INK = "#1d2a21", GOLD = "#f4c95d", CLAY = "#a94a20";
 
+/* A packet serves the Thursday cutoff it points at, so anchor the week on the
+   coming Thursday rather than on today. A Sunday run then lands on the week
+   ahead (the one customers are ordering into), not the week that just ended. */
+function campaignWeek(d = new Date()) {
+  const t = new Date(d);
+  t.setHours(12, 0, 0, 0);
+  const add = (4 - t.getDay() + 7) % 7;   // days until Thursday; 0 if today is Thu
+  t.setDate(t.getDate() + add);
+  return isoWeek(t);
+}
+
 function isoWeek(d = new Date()) {
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const day = t.getUTCDay() || 7;
@@ -228,7 +239,7 @@ const HASHTAGS = [
 ];
 
 async function main() {
-  const week = FORCED_WEEK ?? isoWeek();
+  const week = FORCED_WEEK ?? campaignWeek();
   const store = await loadStore();
   const product = pick(store.products, week);
   const step = processFor(product, week);
