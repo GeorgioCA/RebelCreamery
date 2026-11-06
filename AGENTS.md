@@ -50,6 +50,28 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 - `/admin/products` — product table; `/admin/products/:id` edits a product, sets stock and sold-out, and queues labels.
 - Stock and the sold-out flag are only editable per product — there are no stock cards on the dashboard.
 
+## Product variants
+
+Products that share a **variant group** collapse into one storefront card, with the
+choices picked inside the quick view. There is no separate variants table: each
+combination is a normal product, so cart keys, checkout, stock, order snapshots and
+labels are unchanged.
+
+- Set it per product in **Products → Edit → Variants**: `Variant group` (e.g. `Yogurt`)
+  and `Variant options`, one `Label: Value` per line. Every member needs the same
+  labels spelled identically; the picker matches on exact strings.
+- The card is titled by the group, shows the lowest member price (`from $…`) and the
+  distinct sizes, and its CTA opens the picker instead of adding.
+- The popup resolves the selected combination to a member product id and repaints
+  price, sale price, weight, SKU, ingredients, allergens, shelf life and art. The Add
+  button targets that member — nothing is priced on the client.
+- Combinations with no matching member are disabled rather than sold. A group with
+  one member, or with no option lines, falls back to plain single-product cards.
+- Deep links still work: `/#product-<member-id>` opens the group with that variant
+  preselected (label QR codes depend on this).
+- `/api/store.json` exposes `variantGroup` and `variantOptions` per product so
+  external tools can group them.
+
 ## Product quick view
 
 Clicking a card's illustration or its **Ingredients & details →** link opens a detail

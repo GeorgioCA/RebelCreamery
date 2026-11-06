@@ -568,7 +568,8 @@ app.get("/api/store.json", (_req, res) => {
     delivery,
     products: listProducts({ activeOnly: true }).map((p) => ({
       id: p.id, sku: p.sku, name: p.name, weight: p.weight, priceCents: priceOf(p), saleCents: p.saleCents || null, regularCents: p.priceCents,
-      note: p.note, tags: p.tags, art: p.art
+      note: p.note, tags: p.tags, art: p.art,
+      variantGroup: p.variantGroup || "", variantOptions: p.variantOptions || {}
     }))
   });
 });
@@ -839,6 +840,17 @@ app.get("/admin/products/:id", adminAuth, (req, res) => {
   res.send(renderProductForm({ product, queued: Number(req.query.queued) || 0 }));
 });
 
+function parseOptionLines(raw) {
+  const out = {};
+  for (const line of String(raw || "").split(/\r?\n/)) {
+    const m = /^\s*([^:]{1,40}):\s*(.{1,40}?)\s*$/.exec(line);
+    if (m && m[1].trim() && m[2].trim() && Object.keys(out).length < 6) {
+      out[m[1].trim()] = m[2].trim();
+    }
+  }
+  return out;
+}
+
 function parseProductBody(body) {
   const cents = Math.round(Number(String(body.price || "").replace(/[^0-9.]/g, "")) * 100);
   const saleRaw = String(body.sale || "").trim();
@@ -864,6 +876,8 @@ function parseProductBody(body) {
     allergens: String(body.allergens || "Milk").trim() || "Milk",
     shelfLifeDays: Math.min(365, Math.max(1, parseInt(body.shelf_life_days, 10) || 14)),
     subscribable: body.subscribable === "1",
+    variantGroup: String(body.variant_group || "").trim().slice(0, 40),
+    variantOptions: parseOptionLines(body.variant_options),
     image: null
   };
 }

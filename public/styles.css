@@ -715,6 +715,20 @@ th[aria-sort] .th-sort{color:var(--ink)}
 .qv-specs dd{margin:0}
 .qv-actions{display:flex;gap:10px;align-items:center;margin-top:20px}
 
+.qv-options{display:flex;flex-direction:column;gap:12px;margin:18px 0 6px}
+.qv-opt{display:flex;flex-direction:column;gap:6px}
+.qv-opt-label{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;color:var(--ink-soft)}
+.qv-opt-values{display:flex;flex-wrap:wrap;gap:8px}
+.qv-opt-values button{
+  min-height:40px;border:1px solid var(--line-strong);background:var(--paper);border-radius:999px;
+  padding:8px 15px;font-size:13.5px;line-height:1.2;
+  transition:background .15s ease,color .15s ease,border-color .15s ease;
+}
+.qv-opt-values button:hover:not(:disabled){border-color:var(--clay)}
+.qv-opt-values button[aria-checked="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.qv-opt-values button:disabled{opacity:.38;cursor:not-allowed;text-decoration:line-through}
+.card-price .from{font-family:var(--sans);font-size:12px;letter-spacing:.03em;color:var(--ink-soft);margin-right:3px}
+
 @media (max-width:720px){
   .qv{padding:0;align-items:flex-end}
   .qv-panel{width:100%;max-height:92dvh}

@@ -125,8 +125,9 @@
   const qv = document.getElementById("qv");
   const qvContent = document.getElementById("qv-content");
   let qvLastFocus = null;
+  let variantData = null, variantState = null, variantEls = null;
 
-  function openQuickView(id) {
+  function openQuickView(id, { variantId = "" } = {}) {
     if (!qv || !qvContent) return;
     const tpl = document.querySelector(`template[data-qv-tpl="${CSS.escape(id)}"]`);
     if (!tpl) return;
@@ -137,6 +138,7 @@
     if (title) { title.id = "qv-title"; qvContent.setAttribute("aria-labelledby", "qv-title"); }
     qv.hidden = false;
     document.body.style.overflow = "hidden";
+    initVariantPicker(variantId);
     qv.querySelector(".qv-close")?.focus();
   }
 
@@ -145,8 +147,94 @@
     qv.hidden = true;
     qvContent.replaceChildren();
     qvContent.removeAttribute("aria-labelledby");
+    variantData = variantState = variantEls = null;
     if (!drawer?.classList.contains("open")) document.body.style.overflow = "";
     if (restoreFocus && qvLastFocus && document.contains(qvLastFocus)) qvLastFocus.focus();
+  }
+
+  /* Variant groups: members stay real products. This only resolves the option
+     buttons to the matching product id, then repaints price, weight, SKU,
+     ingredients, art and the Add target from server-provided data. */
+  function initVariantPicker(initialId = "") {
+    variantData = variantState = variantEls = null;
+    const dataEl = qvContent?.querySelector(".qv-data");
+    if (!dataEl) return;
+    let data;
+    try { data = JSON.parse(dataEl.textContent); } catch { return; }
+    if (!Array.isArray(data?.variants) || !data.variants.length) return;
+    variantData = data;
+    const first = data.variants.find((v) => v.id === initialId)
+      || data.variants.find((v) => v.id === data.defaultId)
+      || data.variants[0];
+    variantState = { ...first.options };
+    variantEls = {
+      art: qvContent.querySelector("[data-qv-art]"),
+      price: qvContent.querySelector("[data-qv-price]"),
+      add: qvContent.querySelector(".btn-add"),
+      qty: qvContent.querySelector(".stepper input"),
+    };
+    paintVariant();
+  }
+
+  function paintVariant() {
+    if (!variantData) return;
+    const { art, price, add, qty } = variantEls || {};
+    // An option stays clickable only if some variant exists with it given the
+    // other current choices; otherwise the buyer can build an impossible combo.
+    for (const group of qvContent.querySelectorAll(".qv-opt")) {
+      const key = group.dataset.opt;
+      for (const btn of group.querySelectorAll("[data-opt-value]")) {
+        const trial = { ...variantState, [key]: btn.dataset.optValue };
+        const reachable = variantData.variants.some((v) =>
+          Object.entries(trial).every(([k, val]) => !v.options[k] || v.options[k] === val));
+        btn.disabled = !reachable;
+        btn.setAttribute("aria-disabled", String(!reachable));
+        btn.setAttribute("aria-checked", String(variantState[key] === btn.dataset.optValue));
+      }
+    }
+    const v = variantData.variants.find((x) =>
+      Object.entries(variantState).every(([k, val]) => !x.options[k] || x.options[k] === val));
+    if (!v) {
+      if (add) { add.disabled = true; add.textContent = "Not available"; }
+      return;
+    }
+    if (price) {
+      price.innerHTML = `${v.saleCents && v.saleCents < v.priceCents
+        ? `<span class="was">${money(v.priceCents)}</span><span class="now">${money(v.saleCents)}</span>`
+        : money(v.priceCents)} <span class="qv-weight" data-qv-weight>/ ${esc(v.weight)}</span>`;
+    }
+    const spec = (key, text, show) => {
+      const row = qvContent.querySelector(`[data-spec="${key}"]`);
+      if (!row) return;
+      row.hidden = !show;
+      const dd = row.querySelector("dd");
+      if (dd) dd.textContent = text;
+    };
+    spec("ingredients", v.ingredients, !!v.ingredients);
+    spec("allergens", v.allergens, !!v.allergens);
+    spec("keeps", `${v.shelfLifeDays} days refrigerated`, !!v.shelfLifeDays);
+    spec("sku", v.sku, !!v.sku);
+    if (art) {
+      art.className = `qv-art art-${v.artId}${v.image ? " has-photo" : ""}`;
+      art.innerHTML = v.image ? `<img src="/media/${encodeURIComponent(v.image)}" alt="${esc(v.name)}"/>` : v.art;
+    }
+    if (qty) {
+      qty.max = String(v.maxPerOrder);
+      if (Number(qty.value) > v.maxPerOrder) qty.value = String(v.maxPerOrder);
+    }
+    if (add) {
+      add.dataset.add = v.id;
+      add.disabled = !!v.soldOut;
+      add.textContent = v.soldOut ? "Sold out" : "Add";
+    }
+  }
+
+  function pickOption(btn) {
+    if (!variantData || btn.disabled) return;
+    const group = btn.closest(".qv-opt");
+    if (!group) return;
+    variantState[group.dataset.opt] = btn.dataset.optValue;
+    paintVariant();
   }
 
   function renderCart() {
@@ -197,6 +285,8 @@
     const qvOpen = e.target.closest("[data-qv]");
     if (qvOpen) { openQuickView(qvOpen.dataset.qv); return; }
     if (e.target.closest("[data-qv-close]")) { closeQuickView(); return; }
+    const opt = e.target.closest("[data-opt-value]");
+    if (opt && opt.closest("#qv")) { pickOption(opt); return; }
 
     const addBtn = e.target.closest("[data-add]");
     if (addBtn) {
@@ -253,10 +343,16 @@
     if (e.key === "Escape" && drawer?.classList.contains("open")) closeCart();
   });
 
-  // Labels carry a QR to /#product-<id>; open the detail rather than just scroll.
+  // Labels carry a QR to /#product-<id>; open the detail (or its group, with
+  // that variant preselected) rather than just scroll.
   const openFromHash = () => {
     const m = /^#product-(.+)$/.exec(location.hash);
-    if (m) openQuickView(decodeURIComponent(m[1]));
+    if (!m) return;
+    const id = decodeURIComponent(m[1]);
+    if (document.querySelector(`template[data-qv-tpl="${CSS.escape(id)}"]`)) { openQuickView(id); return; }
+    const anchor = document.getElementById(`product-${id}`);
+    const card = anchor?.closest("[data-qv-group]");
+    if (card) openQuickView(card.dataset.qvGroup, { variantId: id });
   };
   window.addEventListener("hashchange", openFromHash);
   openFromHash();

@@ -12,9 +12,10 @@ const ok = (label, cond, extra = "") => out.push(`${cond ? "PASS" : "FAIL"}  ${l
   const page = await ctx.newPage();
   await page.goto(BASE + "/", { waitUntil: "networkidle" });
 
-  // open from the "Ingredients & details" button on the first card
-  const trigger = page.locator(".card .card-more").first();
-  const name = (await page.locator(".card .card-top h3").first().innerText()).split("\n")[0].trim();
+  // open from the "Ingredients & details" button on a standalone card
+  const card = page.locator(".card").filter({ has: page.locator(".card-more") }).first();
+  const trigger = card.locator(".card-more");
+  const name = (await card.locator(".card-top h3").innerText()).split("\n")[0].trim();
   await trigger.click();
   await page.waitForSelector("#qv:not([hidden])");
 
@@ -103,9 +104,10 @@ const ok = (label, cond, extra = "") => out.push(`${cond ? "PASS" : "FAIL"}  ${l
   const r = await page.evaluate(() => ({
     open: !document.getElementById("qv").hidden,
     title: document.querySelector("#qv-content .qv-copy h2")?.textContent.trim(),
+    add: document.querySelector("#qv .btn-add")?.dataset.add,
     hash: location.hash,
   }));
-  ok("QR deep link /#product-yogurt-6 opens that product", r.open && r.title === "Yogurt 6%", JSON.stringify(r));
+  ok("QR deep link /#product-yogurt-6 opens its group with that variant", r.open && r.title === "Yogurt" && r.add === "yogurt-6", JSON.stringify(r));
   await ctx.close();
 }
 
