@@ -1,0 +1,21 @@
+/* Keep secrets and local data out of the image: the web Dockerfile does `COPY . .`,
+   and this directory is also a gitignored-but-real working copy on a shared drive.
+   Anything listed here must not ride along in the build context. */
+.env
+.env.*
+.git
+.gitignore
+node_modules
+data/
+screenshots/
+*.log
+
+# local artifacts, never runtime inputs
+__pycache__/
+.venv/
+brand/weekly/
+
+# the print agent lives on the machine with the printer, not in the container
+print-agent/run-labels.cmd
+print-agent/spool/
+print-agent/out/

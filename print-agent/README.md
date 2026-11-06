@@ -62,8 +62,9 @@ curl -X POST localhost:8099/print -H 'X-Print-Token: lan-secret' \
      -H 'Content-Type: image/png' --data-binary @label.png
 ```
 
-`GET /health` reports liveness. With no `--token` the endpoint is open — only do that on a trusted
-network.
+`GET /health` reports liveness. The HTTP intake is fail-closed: without `--token` it refuses anything
+except loopback. Set `--token` to serve the LAN (still no TLS — keep the secret off untrusted
+networks). The same rule applies to `run --source http`.
 
 ## One-offs and previews
 
@@ -81,7 +82,7 @@ python3 labelprint.py preview job.json -o label.png     # render only, never pri
 {
   "heading": "Smoked Cheddar",
   "subheading": "220 g",
-  "logo": "/home/pi/logo.png",
+  "logo": "logo.png",
   "rows": [["Packed", "24 Oct 2026"], ["Best before", "21 Nov 2026"]],
   "items": [{"qty": 2, "name": "Yogurt 750 g"}],
   "body": "Whole milk, salt, cultures, microbial rennet.",

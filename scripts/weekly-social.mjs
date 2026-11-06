@@ -53,7 +53,8 @@ const cutoffLine = (s = "") => {
 const cutoffHead = (s = "") => {
   const line = cutoffLine(s);                      // "Order by Wednesday 9 pm."
   const m = line.match(/^(Order by)\s+(.*)$/i);
-  return m ? `${m[1]}<br/>${m[2]}` : line;
+  // cutoff text is owner-entered; escape it like the other site copy.
+  return m ? `${esc(m[1])}<br/>${esc(m[2])}` : esc(line);
 };
 
 const PROCESS = [

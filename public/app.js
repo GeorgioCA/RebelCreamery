@@ -701,7 +701,13 @@
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error || "Could not place the order.");
         if (out.url?.startsWith("/")) write({});
-        location.href = out.url;
+        // Same-origin paths and https-only absolute URLs (Stripe checkout) may
+        // navigate; anything else — javascript:, data:, a bare protocol — can't.
+        if (out.url?.startsWith("/") || /^https:\/\//.test(String(out.url || ""))) {
+          location.href = out.url;
+        } else {
+          throw new Error("Could not place the order.");
+        }
       } catch (err) {
         errorEl.hidden = false;
         errorEl.textContent = err.message;
@@ -719,6 +725,17 @@
 
   renderCart();
 })();
+
+// Confirmation dialogs: forms carry their message in data-confirm instead of an
+// inline onsubmit="confirm('…')". Attribute text is read literally, so admin-entered
+// product names or discount codes with quotes or </script> can't break out of a
+// JS string context (the old inline form was entity-decoded back into real quotes
+// by the HTML parser).
+document.addEventListener("submit", (e) => {
+  const form = e.target;
+  if (!form.matches || !form.matches("[data-confirm]")) return;
+  if (!confirm(form.getAttribute("data-confirm"))) e.preventDefault();
+});
 
 // Copy the order link to the clipboard.
 document.addEventListener("click", async (e) => {

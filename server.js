@@ -51,13 +51,20 @@ const MAX_ITEMS_PER_ORDER = 24;
 process.on("unhandledRejection", (err) => console.error("unhandled rejection:", err));
 
 const app = express();
-app.set("trust proxy", true);
+// req.ip must be the client address Cloudflare actually observed. Trusting "true"
+// trusts the entire client-controlled X-Forwarded-For chain, which lets a caller
+// rotate fake headers to reset the per-IP rate buckets below. Two hops exactly:
+// the Coolify proxy, then Cloudflare — both append to the far right, which a
+// client cannot influence.
+app.set("trust proxy", 2);
 app.disable("x-powered-by");
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("X-Frame-Options", "DENY");
-  // 'unsafe-inline' stays until the inline __CATALOG__ script and confirm() handlers move out.
+  // 'unsafe-inline' stays until the inline __CATALOG__ script moves out. The
+  // confirm() dialogs used to be inline handlers too; they are data-confirm
+  // attributes + a delegated listener now, so this is the last use.
   res.setHeader(
     "Content-Security-Policy",
     "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; " +
@@ -767,7 +774,16 @@ app.post("/admin/settings", adminAuth, (req, res) => {
 app.post("/admin/login", (req, res) => {
   const next = String(req.body.next || "/admin");
   const target = next.startsWith("/admin") ? next : "/admin";
-  if (limited(`login:${req.ip}`, 10, 10 * 60_000)) {
+  // Two buckets per attempt. The per-IP bucket is the old one; X-Forwarded-For
+  // can be rotated by an untrusted client (no app-layer trust scheme can fully
+  // stop that behind client-configurable proxy headers), so the username bucket
+  // exists so guessing the one real admin account stays capped even when every
+  // request arrives "from" a fresh source address.
+  const uname = String(req.body.username || "").toLowerCase().slice(0, 200);
+  const overLimit =
+    limited(`login:${req.ip}`, 10, 10 * 60_000) ||
+    limited(`login-user:${uname}`, 10, 10 * 60_000);
+  if (overLimit) {
     return res.status(429).send(renderLogin({ error: "Too many attempts. Wait a few minutes.", next: target }));
   }
   if (!credentialsOk(req.body.username, req.body.password)) {

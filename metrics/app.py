@@ -30,6 +30,7 @@ Environment
 """
 
 import base64
+import hmac
 import html
 import json
 import os
@@ -487,8 +488,12 @@ def ago(seconds):
 
 
 def prom_labels(pairs):
-    body = ",".join(f'{k}="{str(v).replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"'
-                    for k, v in pairs if v is not None)
+    # Prometheus escape: backslash, quote and newline in label values.
+    def value(v):
+        s = str(v)
+        s = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "")
+        return s
+    body = ",".join(f'{k}="{value(v)}"' for k, v in pairs if v is not None)
     return "{" + body + "}" if body else ""
 
 
@@ -854,7 +859,14 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return False
         user, _, password = decoded.partition(":")
-        return user == USER and password == PASSWORD
+        # Constant-time compares (the store's other credential checks are
+        # timing-safe; this one must be too) — then a short pause on failure so
+        # credential stuffing can't run at wire speed.
+        user_ok = hmac.compare_digest(user.encode("utf-8"), USER.encode("utf-8"))
+        pass_ok = hmac.compare_digest(password.encode("utf-8"), PASSWORD.encode("utf-8"))
+        if not (user_ok and pass_ok):
+            time.sleep(0.2)
+        return user_ok and pass_ok
 
     def send_payload(self, body, content_type, status=200):
         data = body.encode("utf-8")

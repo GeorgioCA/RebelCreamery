@@ -128,6 +128,34 @@ def normalize(job: dict) -> dict:
     return out
 
 
+# `logo` is the one job field that opens a file path. Because payloads are
+# network-sourced (the store's queue, spool JSON, the HTTP intake), it may only
+# point inside this agent's own folder. `print --logo` follows the same rule:
+# copy the art next to labelprint.py and pass a relative path.
+AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def logo_allowed(path) -> bool:
+    try:
+        real = os.path.realpath(path)
+        return os.path.commonpath([real, AGENT_DIR]) == AGENT_DIR
+    except (TypeError, ValueError):
+        return False
+
+
+def render(job: dict, width: int = WIDTH_PX) -> Image.Image:
+    """Render a job dict to a 1-bit image `width` pixels across."""
+    job = normalize(job)
+    margin = int(job.get("margin", MARGIN))
+    inner = width - 2 * margin
+    fixed_height = None
+    if job.get("height_mm"):
+        fixed_height = max(80, round(float(job["height_mm"]) / 25.4 * 300))
+
+    canvas = Image.new("L", (width, fixed_height or 2400), 255)
+    d = ImageDraw.Draw(canvas)
+    y = margin
+
 def render(job: dict, width: int = WIDTH_PX) -> Image.Image:
     """Render a job dict to a 1-bit image `width` pixels across."""
     job = normalize(job)
@@ -143,12 +171,17 @@ def render(job: dict, width: int = WIDTH_PX) -> Image.Image:
 
     logo_path = job.get("logo")
     if logo_path and os.path.exists(logo_path):
-        logo = Image.open(logo_path).convert("L")
-        scale = min(inner / logo.width, 150 / logo.height, 1.0)
-        if scale < 1.0:
-            logo = logo.resize((max(1, int(logo.width * scale)), max(1, int(logo.height * scale))))
-        canvas.paste(logo, (margin, y))
-        y += logo.height + 12
+        if not logo_allowed(logo_path):
+            # Payloads (print queue, spool files, HTTP intake) are network data;
+            # `logo` must not open arbitrary local files and rasterise them.
+            LOG.warning("ignoring logo outside the agent directory: %s", logo_path)
+        else:
+            logo = Image.open(logo_path).convert("L")
+            scale = min(inner / logo.width, 150 / logo.height, 1.0)
+            if scale < 1.0:
+                logo = logo.resize((max(1, int(logo.width * scale)), max(1, int(logo.height * scale))))
+            canvas.paste(logo, (margin, y))
+            y += logo.height + 12
 
     # Product illustration at the top right, sent as a base64 PNG by the store.
     art_img = None
@@ -589,6 +622,10 @@ def build_source(args):
         os.makedirs(args.spool_dir, exist_ok=True)
         return SpoolSource(args.spool_dir)
     if args.source == "http":
+        # Fail closed: an untokened HTTP intake only binds to loopback. Wide-open
+        # LAN printing was how "anyone can push a label" landed in the README.
+        if not args.token and args.host not in ("127.0.0.1", "localhost", "::1"):
+            sys.exit("The http source requires --token, or --host 127.0.0.1.")
         return HttpSource(args.host, args.port, args.token, args)
     sys.exit(f"unknown source {args.source!r}")
 
@@ -650,7 +687,7 @@ def main(argv=None):
     runp.add_argument("--token", default=os.environ.get("PRINT_TOKEN"))
     runp.add_argument("--limit", type=int, default=10)
     runp.add_argument("--spool-dir", default=os.environ.get("SPOOL_DIR", "./spool"))
-    runp.add_argument("--host", default="0.0.0.0")
+    runp.add_argument("--host", default="127.0.0.1")
     runp.add_argument("--port", type=int, default=8099)
     backend_flags(runp)
 
@@ -674,7 +711,7 @@ def main(argv=None):
     backend_flags(pv)
 
     sp = sub.add_parser("serve", help="HTTP intake only")
-    sp.add_argument("--host", default="0.0.0.0")
+    sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8099)
     sp.add_argument("--token", default=os.environ.get("PRINT_TOKEN"))
     backend_flags(sp)
@@ -713,6 +750,9 @@ def main(argv=None):
         for attr in ("store_url", "limit", "spool_dir"):
             setattr(args, attr, None)
         args._stop = threading.Event()
+        # Same fail-closed rule as `run --source http` (build_source).
+        if not args.token and args.host not in ("127.0.0.1", "localhost", "::1"):
+            sys.exit("The http intake requires --token, or --host 127.0.0.1.")
         source = HttpSource(args.host, args.port, args.token, args)
         source.start()
         LOG.info("ready — http intake on :%d, backend=%s", args.port, args.backend)
