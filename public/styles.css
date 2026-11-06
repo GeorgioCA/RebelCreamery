@@ -212,7 +212,7 @@ ul,ol,dl{margin:0;padding:0}
 .facts li{font-size:12.5px;color:#b9c2b4;line-height:1.45}
 .facts span{display:block;font-family:var(--serif);font-size:30px;color:var(--butter);margin-bottom:4px}
 .story-art{position:relative;display:grid;place-items:center;min-height:420px}
-.story-ring{position:absolute;width:340px;height:340px;border:1px solid rgba(244,201,93,.35);border-radius:50%}
+.story-ring{position:absolute;width:min(340px,86vw);aspect-ratio:1;height:auto;border:1px solid rgba(244,201,93,.35);border-radius:50%}
 .story-art .art-svg{width:190px;color:#f3ecdd;position:relative}
 
 /* --------------------------------- footer -------------------------------- */
@@ -671,4 +671,62 @@ th[aria-sort] .th-sort{color:var(--ink)}
   .plan-controls{flex-wrap:wrap}
   .plan-pick{flex:1 1 100%}
   .tubs-step{height:32px}
+}
+
+/* ------------------------------- quick view ------------------------------ */
+/* Fixed overlay + panel, same primitives as the cart drawer. dvh (not vh) so
+   iOS Safari's collapsing URL bar cannot clip the sheet; the action row is
+   sticky on phones so Add never sits below the fold. */
+.card-open{display:grid;place-items:center;width:100%;height:100%;border:0;background:none;padding:0;color:inherit;cursor:zoom-in}
+.card-more{align-self:flex-start;border:0;background:none;padding:0;margin:-4px 0 16px;font-size:13px;color:var(--ink-soft);border-bottom:1px solid var(--line-strong);line-height:1.5}
+.card-more:hover{color:var(--clay);border-color:var(--clay)}
+
+.qv{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;padding:24px}
+.qv[hidden]{display:none!important}
+.qv-backdrop{position:absolute;inset:0;background:rgba(20,28,23,.5);backdrop-filter:blur(3px)}
+.qv-panel{position:relative;z-index:1;display:flex;width:min(920px,100%);max-height:calc(100dvh - 48px)}
+.qv-content{
+  display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);width:100%;overflow:hidden;
+  background:var(--card);border:1px solid var(--line);border-radius:22px;
+  box-shadow:0 40px 80px -40px rgba(0,0,0,.6);
+}
+.qv-content:focus{outline:none}
+.qv-art{display:grid;place-items:center;padding:32px;min-height:260px;background:linear-gradient(170deg,#faf5e9,#e8dfcb)}
+.qv-art .art-svg{width:150px;height:auto;color:var(--ink)}
+.qv-art.has-photo{padding:0}
+.qv-art.has-photo img{width:100%;height:100%;max-height:560px;object-fit:cover;display:block}
+.qv-copy{overflow-y:auto;overscroll-behavior:contain;padding:34px 34px calc(34px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
+.qv-close{
+  position:absolute;top:10px;right:10px;z-index:2;width:44px;height:44px;border:0;border-radius:50%;
+  background:rgba(251,247,239,.94);color:var(--ink);font-size:19px;display:grid;place-items:center;
+  box-shadow:0 2px 10px rgba(29,42,33,.14);
+}
+.qv-close:hover{background:var(--paper-2)}
+.qv-eyebrow{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--clay);font-weight:600;margin:0 0 8px}
+.qv-copy h2{font-size:34px;font-weight:400;letter-spacing:-.03em;margin:0 0 4px}
+.qv-price{font-family:var(--serif);font-size:24px;color:var(--clay);margin:0 0 16px;display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+.qv-price .was{font-size:17px;color:var(--ink-soft);text-decoration:line-through}
+.qv-weight{font-family:var(--sans);font-size:13px;color:var(--ink-soft);letter-spacing:.02em}
+.qv-note{font-size:15px;line-height:1.6;color:var(--ink-soft);margin:0}
+.qv-copy .tags{margin:14px 0 4px;margin-bottom:20px}
+.qv-specs{margin:0;border-top:1px solid var(--line)}
+.qv-specs div{display:grid;grid-template-columns:104px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.qv-specs dt{color:var(--ink-soft)}
+.qv-specs dd{margin:0}
+.qv-actions{display:flex;gap:10px;align-items:center;margin-top:20px}
+
+@media (max-width:720px){
+  .qv{padding:0;align-items:flex-end}
+  .qv-panel{width:100%;max-height:92dvh}
+  .qv-content{display:flex;flex-direction:column;border-radius:20px 20px 0 0;border-bottom:0}
+  .qv-art{flex:0 0 auto;min-height:0;padding:16px;max-height:24dvh}
+  .qv-art .art-svg{width:88px}
+  .qv-art.has-photo img{height:24dvh}
+  .qv-copy{flex:1 1 auto;overflow-y:auto;padding:20px 20px 0}
+  .qv-copy h2{font-size:27px}
+  .qv-close{position:absolute;top:8px;right:8px;background:rgba(255,253,248,.96)}
+  .qv-actions{
+    position:sticky;bottom:0;margin:16px -20px 0;padding:12px 20px calc(12px + env(safe-area-inset-bottom));
+    background:var(--card);border-top:1px solid var(--line);
+  }
 }

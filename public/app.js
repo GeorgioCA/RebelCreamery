@@ -121,6 +121,34 @@
     document.getElementById("cart-open")?.setAttribute("aria-expanded", "false");
   }
 
+  /* ------------------------------ quick view ----------------------------- */
+  const qv = document.getElementById("qv");
+  const qvContent = document.getElementById("qv-content");
+  let qvLastFocus = null;
+
+  function openQuickView(id) {
+    if (!qv || !qvContent) return;
+    const tpl = document.querySelector(`template[data-qv-tpl="${CSS.escape(id)}"]`);
+    if (!tpl) return;
+    closeCart();
+    qvLastFocus = document.activeElement;
+    qvContent.replaceChildren(tpl.content.cloneNode(true));
+    const title = qvContent.querySelector(".qv-copy h2");
+    if (title) { title.id = "qv-title"; qvContent.setAttribute("aria-labelledby", "qv-title"); }
+    qv.hidden = false;
+    document.body.style.overflow = "hidden";
+    qv.querySelector(".qv-close")?.focus();
+  }
+
+  function closeQuickView({ restoreFocus = true } = {}) {
+    if (!qv || qv.hidden) return;
+    qv.hidden = true;
+    qvContent.replaceChildren();
+    qvContent.removeAttribute("aria-labelledby");
+    if (!drawer?.classList.contains("open")) document.body.style.overflow = "";
+    if (restoreFocus && qvLastFocus && document.contains(qvLastFocus)) qvLastFocus.focus();
+  }
+
   function renderCart() {
     const cart = clean(read());
     const n = count(cart);
@@ -166,13 +194,18 @@
   }
 
   document.addEventListener("click", (e) => {
+    const qvOpen = e.target.closest("[data-qv]");
+    if (qvOpen) { openQuickView(qvOpen.dataset.qv); return; }
+    if (e.target.closest("[data-qv-close]")) { closeQuickView(); return; }
+
     const addBtn = e.target.closest("[data-add]");
     if (addBtn) {
       const id = addBtn.dataset.add;
-      const card = addBtn.closest(".card");
-      const qty = Math.max(1, Number(card?.querySelector(".stepper input")?.value || 1));
+      const scope = addBtn.closest(".card, #qv");
+      const qty = Math.max(1, Number(scope?.querySelector(".stepper input")?.value || 1));
       add(id, qty);
       toast(`${byId[id].name} added`);
+      if (addBtn.closest("#qv")) closeQuickView({ restoreFocus: false });
       openCart();
       return;
     }
@@ -188,9 +221,9 @@
     if (e.target.closest("#cart-open")) { openCart(); return; }
     if (e.target.closest("#cart-close") || e.target === backdrop) { closeCart(); return; }
 
-    // product-card steppers
+    // product-card steppers (shelf cards and the quick view)
     const s = e.target.closest("[data-step]");
-    if (s && s.closest(".card")) {
+    if (s && s.closest(".card, #qv")) {
       const input = s.closest(".stepper").querySelector("input");
       const max = Number(input.max || 12);
       input.value = String(Math.min(max, Math.max(1, Number(input.value || 1) + Number(s.dataset.step))));
@@ -204,8 +237,29 @@
   });
 
   document.addEventListener("keydown", (e) => {
+    if (qv && !qv.hidden) {
+      if (e.key === "Escape") { e.preventDefault(); closeQuickView(); return; }
+      if (e.key === "Tab") {
+        // Keep focus inside the dialog while it is open.
+        const items = [...qv.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+          .filter((el) => !el.disabled && el.offsetParent !== null);
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+      return;
+    }
     if (e.key === "Escape" && drawer?.classList.contains("open")) closeCart();
   });
+
+  // Labels carry a QR to /#product-<id>; open the detail rather than just scroll.
+  const openFromHash = () => {
+    const m = /^#product-(.+)$/.exec(location.hash);
+    if (m) openQuickView(decodeURIComponent(m[1]));
+  };
+  window.addEventListener("hashchange", openFromHash);
+  openFromHash();
 
   document.addEventListener("cart:change", renderCart);
 

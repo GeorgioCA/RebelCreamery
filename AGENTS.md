@@ -50,6 +50,25 @@ Local preview used during development (port 3100, logs to /tmp/creamery.log):
 - `/admin/products` — product table; `/admin/products/:id` edits a product, sets stock and sold-out, and queues labels.
 - Stock and the sold-out flag are only editable per product — there are no stock cards on the dashboard.
 
+## Product quick view
+
+Clicking a card's illustration or its **Ingredients & details →** link opens a detail
+dialog on the home page (`#qv` in `lib/views.js`). The content is **server-rendered into
+an inert `<template data-qv-tpl="<id>">` inside each card** and cloned in by
+`public/app.js` — do not rebuild the art, fat percentage or prices in client JS. A
+product change (new field, sale price, sold-out state) belongs in `quickViewTemplate()`,
+not in a second client-side source of truth.
+
+- Desktop: centred two-column modal. ≤720 px: bottom sheet with a **sticky action bar**
+  so Add is never below the fold; the copy scrolls under it.
+- Uses `100dvh` (not `vh`) and `env(safe-area-inset-bottom)` — iOS Safari's URL bar and
+  home indicator otherwise clip the sheet.
+- Escape, backdrop and the close button dismiss; focus is trapped while open and
+  returned to the trigger on close. Body scroll is locked.
+- Label QR codes point at `/#product-<id>`, which opens that product's detail on load.
+- Adding from the dialog closes it before opening the cart (the cart drawer sits at a
+  lower z-index and would otherwise open behind the modal).
+
 ## Conventions
 
 - **Money is integer cents**, CAD, everywhere. Format only at the edge with `money()`. No floats for money.
