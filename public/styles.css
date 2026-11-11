@@ -148,17 +148,24 @@ ul,ol,dl{margin:0;padding:0}
 }
 .card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--line-strong)}
 .card.is-soldout{opacity:.62}
-.card-art{display:grid;place-items:center;padding:30px 10px 6px;min-height:212px;background:linear-gradient(170deg,#faf5e9,#e8dfcb)}
-.art-yogurt{background:linear-gradient(170deg,#fff7e2,#f7e9c8)}
-.art-creamcheese{background:linear-gradient(170deg,#faf3e2,#ecdcbe)}
-.art-halloumi{background:linear-gradient(170deg,#fdf1e4,#f3dcc6)}
-.art-butter{background:linear-gradient(170deg,#fdf6e2,#f2dfae)}
-.art-bottle{background:linear-gradient(170deg,#f8f4e8,#e7ddc8)}
-.art-ricotta{background:linear-gradient(170deg,#fbf3e2,#e9d9b9)}
-.art-labneh{background:linear-gradient(170deg,#fcf6e6,#eadcbb)}
-.art-zatar{background:linear-gradient(170deg,#f6f6ea,#e5e8cd)}
-.art-cremefraiche{background:linear-gradient(170deg,#fdf7e7,#f0e0bf)}
-.art-generic{background:linear-gradient(170deg,#faf5e9,#e8dfcb)}
+.card-art{display:grid;place-items:center;padding:30px 10px 6px;min-height:212px;background:var(--art-bg,linear-gradient(170deg,#faf5e9,#e8dfcb))}
+.art-yogurt{--art-bg:linear-gradient(170deg,#fff7e2,#f7e9c8)}
+.art-creamcheese{--art-bg:linear-gradient(170deg,#faf3e2,#ecdcbe)}
+.art-creamcheese-cinnamon{--art-bg:linear-gradient(170deg,#fbf1dd,#e8c79a)}
+.art-creamcheese-strawberry{--art-bg:linear-gradient(170deg,#fdeeeb,#f0cbc3)}
+.art-creamcheese-blueberry{--art-bg:linear-gradient(170deg,#f1f1fa,#d7d2e9)}
+.art-creamcheese-dill{--art-bg:linear-gradient(170deg,#f6f8ea,#e2e9c9)}
+.art-creamcheese-jalapeno{--art-bg:linear-gradient(170deg,#f9f6e3,#e6dcae)}
+.art-creamcheese-pesto{--art-bg:linear-gradient(170deg,#ebf2dd,#c6d7a4)}
+.art-creamcheese-nutella{--art-bg:linear-gradient(170deg,#f7eee4,#e3cdb6)}
+.art-halloumi{--art-bg:linear-gradient(170deg,#fdf1e4,#f3dcc6)}
+.art-butter{--art-bg:linear-gradient(170deg,#fdf6e2,#f2dfae)}
+.art-bottle{--art-bg:linear-gradient(170deg,#f8f4e8,#e7ddc8)}
+.art-ricotta{--art-bg:linear-gradient(170deg,#fbf3e2,#e9d9b9)}
+.art-labneh{--art-bg:linear-gradient(170deg,#fcf6e6,#eadcbb)}
+.art-zatar{--art-bg:linear-gradient(170deg,#f6f6ea,#e5e8cd)}
+.art-cremefraiche{--art-bg:linear-gradient(170deg,#fdf7e7,#f0e0bf)}
+.art-generic{--art-bg:linear-gradient(170deg,#faf5e9,#e8dfcb)}
 .card-art .art-svg{width:126px;height:auto;color:var(--ink)}
 .card-body{padding:22px 24px 26px;display:flex;flex-direction:column;flex:1}
 .card-top{display:flex;justify-content:space-between;align-items:baseline;gap:14px}
@@ -691,8 +698,8 @@ th[aria-sort] .th-sort{color:var(--ink)}
   box-shadow:0 40px 80px -40px rgba(0,0,0,.6);
 }
 .qv-content:focus{outline:none}
-.qv-art{display:grid;place-items:center;padding:32px;min-height:260px;background:linear-gradient(170deg,#faf5e9,#e8dfcb)}
-.qv-art .art-svg{width:150px;height:auto;color:var(--ink)}
+.qv-art{display:grid;place-items:center;padding:32px;min-height:260px;background:var(--art-bg,linear-gradient(170deg,#faf5e9,#e8dfcb))}
+.qv-art .art-svg{width:clamp(150px,52%,240px);height:auto;color:var(--ink)}
 .qv-art.has-photo{padding:0}
 .qv-art.has-photo img{width:100%;height:100%;max-height:560px;object-fit:cover;display:block}
 .qv-copy{overflow-y:auto;overscroll-behavior:contain;padding:34px 34px calc(34px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}
