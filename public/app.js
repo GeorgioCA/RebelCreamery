@@ -170,6 +170,7 @@
     variantEls = {
       art: qvContent.querySelector("[data-qv-art]"),
       price: qvContent.querySelector("[data-qv-price]"),
+      note: qvContent.querySelector("[data-qv-note]"),
       add: qvContent.querySelector(".btn-add"),
       qty: qvContent.querySelector(".stepper input"),
     };
@@ -178,7 +179,7 @@
 
   function paintVariant() {
     if (!variantData) return;
-    const { art, price, add, qty } = variantEls || {};
+    const { art, price, note, add, qty } = variantEls || {};
     // An option stays clickable only if some variant exists with it given the
     // other current choices; otherwise the buyer can build an impossible combo.
     for (const group of qvContent.querySelectorAll(".qv-opt")) {
@@ -214,6 +215,7 @@
     spec("allergens", v.allergens, !!v.allergens);
     spec("keeps", `${v.shelfLifeDays} days refrigerated`, !!v.shelfLifeDays);
     spec("sku", v.sku, !!v.sku);
+    if (note) note.textContent = v.note || "";
     if (art) {
       art.className = `qv-art art-${v.artId}${v.image ? " has-photo" : ""}`;
       art.innerHTML = v.image ? `<img src="/media/${encodeURIComponent(v.image)}" alt="${esc(v.name)}"/>` : v.art;

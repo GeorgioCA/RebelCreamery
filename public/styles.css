@@ -169,7 +169,7 @@ ul,ol,dl{margin:0;padding:0}
 .card-art .art-svg{width:126px;height:auto;color:var(--ink)}
 .card-body{padding:22px 24px 26px;display:flex;flex-direction:column;flex:1}
 .card-top{display:flex;justify-content:space-between;align-items:baseline;gap:14px}
-.card-top h3{font-size:25px;font-weight:500;letter-spacing:-.025em}
+.card-top h3{font-size:25px;font-weight:500;letter-spacing:-.025em;text-wrap:balance}
 .card-price{font-family:var(--serif);font-size:21px;color:var(--clay)}
 .card-weight{font-size:12.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin:5px 0 12px;font-weight:500}
 .card-note{font-size:14.5px;color:var(--ink-soft);line-height:1.55;margin:0 0 16px;flex:1}
