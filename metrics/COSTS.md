@@ -48,6 +48,7 @@ Packaging: 828 mL Cubeware tub $0.45 (yogurt, labneh), 8 oz deli tub $0.10
 | RC-YOG-6-750 | Yogurt 6% | 750 g | **$2.23** | recipe book |
 | RC-CHZ-227 | Cream Cheese | 227 g | **$2.25** | recipe book |
 | RC-HAL-250 | Halloumi | 250 g | **$4.56** | recipe book |
+| RC-OAX-300 | Oaxaca Cheese | 300 g | **$5.35** | estimated from halloumi |
 | RC-YOG-3-750 | Yogurt 3% | 750 g | $1.97 | estimated |
 | RC-YOG-10-750 | Yogurt 10% | 750 g | $2.65 | estimated |
 | RC-YOG-02-750 | Yogurt 0–2% | 750 g | $1.89 | estimated |
@@ -79,6 +80,9 @@ Packaging: 828 mL Cubeware tub $0.45 (yogurt, labneh), 8 oz deli tub $0.10
   olive oil (~$0.09).
 - **Ricotta** — 2.5 L 3% milk ($4.18) added to halloumi whey, vinegar, 500 g
   drained, + clamshell. Inactive SKU; correct it if the recipe changes.
+- **Oaxaca** — estimate, not yet weighed: 2.5 L whole milk ($4.05) at roughly the
+  halloumi yield, rennet and calcium chloride (~$0.55), salt, and a clamshell
+  ($0.30). Scale it to 300 g and replace it with the first real batch.
 
 These estimates are close enough to steer pricing, not close enough
 to file a tax return. Weigh the first real batch of each and replace the number.
