@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const DATA_DIR = process.env.DATA_DIR || "./data";
-import { site, delivery, plans, money, artOptions, applySettings, priceOf } from "./lib/catalog.js";
+import { site, delivery, plans, money, artOptions, applySettings, priceOf, TIP_MAX_CENTS } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listOrdersFiltered, listProducts, markPaid, printQueueSummary,
@@ -255,7 +255,7 @@ app.post("/api/checkout", async (req, res) => {
   try {
     if (limited(req.ip)) return res.status(429).json({ error: "Too many attempts. Try again in a minute." });
 
-    const { items = [], name = "", email = "", phone = "", method = "pickup", address = "", unit = "", street = "", city = "", province = "", postal = "", notes = "", payment = "card", code = "" } = req.body || {};
+    const { items = [], name = "", email = "", phone = "", method = "pickup", address = "", unit = "", street = "", city = "", province = "", postal = "", notes = "", payment = "card", code = "", tip = "", tipCents: tipRaw = "" } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Your cart is empty." });
     if (!name.trim() || name.trim().length < 2) return res.status(400).json({ error: "Please enter your name." });
@@ -337,11 +337,31 @@ app.post("/api/checkout", async (req, res) => {
       if (!discount.ok) return res.status(400).json({ error: discount.error });
     }
     const discountCents = discount.ok ? discount.amountCents : 0;
+    // A delivery tip: a percentage from the settings presets, or a flat amount.
+    // Computed from the subtotal, so the delivery fee and a discount neither
+    // inflate nor shrink it. Pickup orders never carry one.
+    let tipCents = 0;
+    if (method === "delivery") {
+      const pct = Number(tip);
+      const rawTip = String(tipRaw ?? "").trim();
+      if (rawTip !== "") {
+        const n = Number(rawTip);
+        if (!Number.isInteger(n) || n < 0 || n > TIP_MAX_CENTS) {
+          return res.status(400).json({ error: "Enter a tip up to $100." });
+        }
+        tipCents = n;
+      } else if (Number.isInteger(pct) && pct > 0) {
+        if (!delivery.tipPresets.includes(pct)) {
+          return res.status(400).json({ error: "Choose one of the tip options." });
+        }
+        tipCents = Math.round((subtotalCents * pct) / 100);
+      }
+    }
     // A card's first tub rides with the order, so delivery applies to the whole
     // basket exactly as it would without one.
     const deliveryCents = method === "delivery" && subtotalCents < delivery.freeOverCents ? delivery.feeCents : 0;
-    const totalCents = Math.max(0, subtotalCents - discountCents + deliveryCents);
-    const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: deliveryAddress, notes: notes.trim(), items: lines, subtotalCents, deliveryCents, totalCents, discountCents, discountCode: discount.ok ? discount.code : "" };
+    const totalCents = Math.max(0, subtotalCents - discountCents + deliveryCents + tipCents);
+    const orderBase = { name: name.trim(), email: email.trim(), phone: phone.trim(), method, address: deliveryAddress, notes: notes.trim(), items: lines, subtotalCents, deliveryCents, tipCents, totalCents, discountCents, discountCode: discount.ok ? discount.code : "" };
 
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {
@@ -400,6 +420,9 @@ app.post("/api/checkout", async (req, res) => {
         })),
         ...(deliveryCents
           ? [{ quantity: 1, price_data: { currency: "cad", unit_amount: deliveryCents, product_data: { name: `Delivery — ${delivery.area}` } } }]
+          : []),
+        ...(tipCents
+          ? [{ quantity: 1, price_data: { currency: "cad", unit_amount: tipCents, product_data: { name: "Tip for your driver" } } }]
           : [])
       ],
       success_url: `${baseFor(req)}/order/${token}`,
@@ -763,6 +786,7 @@ app.post("/admin/settings", adminAuth, (req, res) => {
     delivery_windows: val("delivery_windows"),
     delivery_fee_cents: cents("delivery_fee"),
     free_delivery_over_cents: cents("free_delivery_over"),
+    delivery_tip_presets: val("delivery_tip_presets"),
     etransfer_email: val("etransfer_email"),
     licence_text: val("licence_text"),
     plan_max_tubs: maxTubs

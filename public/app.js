@@ -379,6 +379,12 @@
     const addressField = document.getElementById("address-field");
     const errorEl = document.getElementById("form-error");
     const submit = document.getElementById("place-order");
+    const tipBlock = document.getElementById("tip-block");
+    const tipWrap = document.getElementById("tip-custom-wrap");
+    const tipInput = form.querySelector('[name="tip_custom"]');
+    const tipRow = document.getElementById("sum-tip-row");
+    const tipEl = document.getElementById("sum-tip");
+    const tipLabel = document.getElementById("sum-tip-label");
 
     // Old subscribe links land here with ?plan=<id>&weeks=<n>: drop the card
     // into the cart once, then behave like any other basket.
@@ -392,6 +398,22 @@
 
     const feeFor = (sub, method) =>
       method === "delivery" && sub < DELIVERY.freeOverCents ? DELIVERY.feeCents : 0;
+
+    // Tip is a delivery-only courtesy, worked out from the subtotal in whole
+    // cents. "custom" reads the amount field; a blank or junk value is zero,
+    // and the server applies the same cap.
+    const TIP_MAX_CENTS = 10000;
+    const tipChoice = () => form.querySelector('input[name="tip"]:checked')?.value || "0";
+    const tipFor = (sub, method) => {
+      if (method !== "delivery") return 0;
+      const choice = tipChoice();
+      if (choice === "custom") {
+        const n = Math.round(Number(tipInput?.value || 0) * 100);
+        return Number.isFinite(n) && n > 0 ? Math.min(n, TIP_MAX_CENTS) : 0;
+      }
+      const pct = Number(choice);
+      return Number.isInteger(pct) && pct > 0 ? Math.round((sub * pct) / 100) : 0;
+    };
 
     function paint() {
       const cart = clean(read());
@@ -465,6 +487,7 @@
       }
 
       const d = Math.min(disc.amountCents, s);
+      const tip = tipFor(s, method);
       subEl.textContent = money(s);
       delRow.hidden = !fee;
       delEl.textContent = money(fee);
@@ -472,9 +495,22 @@
       if (discEl) discEl.textContent = "−" + money(d);
       const discLabel = document.getElementById("sum-discount-label");
       if (discLabel) discLabel.textContent = disc.code ? `Discount · ${disc.code}` : "Discount";
-      totEl.textContent = money(Math.max(0, s - d + fee));
+      totEl.textContent = money(Math.max(0, s - d + fee + tip));
       if (feeLabel) feeLabel.textContent = money(DELIVERY.feeCents);
       addressField.hidden = method !== "delivery";
+
+      // The tip block only exists for delivery, and the amount field only for
+      // "Other" — a pickup cart must not carry a hidden tip into the total.
+      if (tipBlock) tipBlock.hidden = method !== "delivery";
+      if (tipWrap) tipWrap.hidden = method !== "delivery" || tipChoice() !== "custom";
+      if (tipRow) tipRow.hidden = !tip;
+      if (tipEl) tipEl.textContent = money(tip);
+      if (tipLabel) {
+        const choice = tipChoice();
+        tipLabel.textContent = method === "delivery" && choice !== "custom" && Number(choice) > 0
+          ? `Tip · ${choice}%`
+          : "Tip";
+      }
     }
 
     async function applyCode() {
@@ -526,6 +562,8 @@
       await applyCode();
     }
     form.addEventListener("change", () => { paint(); revalidate(); });
+    // Typing a custom tip should move the total as you type, not on blur.
+    tipInput?.addEventListener("input", paint);
     document.addEventListener("cart:change", paint);
     // Turning a line into a subscription (and back) happens at checkout, on the
     // line itself. Rebuild in place so converting doesn't shuffle the basket.
@@ -697,7 +735,14 @@
             postal: data.get("postal"),
             notes: data.get("notes"),
             payment: data.get("payment"),
-            code: disc.code
+            code: disc.code,
+            // Percent from a preset, or the flat amount in cents. The server
+            // recomputes both from its own catalog and settings.
+            ...(data.get("method") === "delivery"
+              ? (tipChoice() === "custom"
+                  ? { tipCents: Math.round(Number(tipInput?.value || 0) * 100) }
+                  : { tip: tipChoice() })
+              : {})
           })
         });
         const out = await res.json().catch(() => ({}));
