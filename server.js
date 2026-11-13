@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const DATA_DIR = process.env.DATA_DIR || "./data";
-import { site, delivery, plans, money, artOptions, applySettings, priceOf, TIP_MAX_CENTS } from "./lib/catalog.js";
+import { site, delivery, plans, money, artOptions, applySettings, priceOf, TIP_MAX_CENTS, MADE_TO_ORDER, countsStock } from "./lib/catalog.js";
 import {
   db, UPLOAD_DIR, claimPrintJobs, countOrders, createOrder, deleteProduct, enqueuePrint, expireStalePendingOrders, listUnpaidEtransfers, listOrdersSince,
   finishPrintJob, getOrder, getOrderByToken, getProduct, listOrders, listOrdersFiltered, listProducts, markPaid, printQueueSummary,
@@ -31,8 +31,8 @@ import { sendOrderConfirmation, sendOrderUpdate, sendOwnerOrderAlert, sendEtrans
 
 const PORT = Number(process.env.PORT || 3000);
 // Made to order: stock is capacity, not a gate. Set MADE_TO_ORDER=0 to sell against
-// counted stock again (and get "N left" / automatic sold-out back).
-const MADE_TO_ORDER = process.env.MADE_TO_ORDER !== "0";
+// counted stock again (and get "N left" / automatic sold-out back). Individual
+// products can count stock regardless — see `count_stock` in the product editor.
 const BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
 // Behind a proxy, derive the public origin from the request when PUBLIC_BASE_URL is unset.
 const baseFor = (req) => BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -322,7 +322,7 @@ app.post("/api/checkout", async (req, res) => {
     for (const l of lines) {
       const prod = catalog[l.id];
       if (prod.soldOut) return res.status(409).json({ error: `${l.name} is sold out this week.` });
-      if (!MADE_TO_ORDER) {
+      if (countsStock(prod)) {
         const available = prod.stock ?? 0;
         if (l.qty > available) return res.status(409).json({ error: `Only ${available} of ${l.name} left this week.` });
       }
@@ -366,7 +366,7 @@ app.post("/api/checkout", async (req, res) => {
     // Interac e-Transfer: record the order, collect payment out of band.
     if (payment === "etransfer") {
       const { number, token } = createOrder({ ...orderBase, payment: "etransfer", status: "awaiting_etransfer" });
-      if (!MADE_TO_ORDER) reserveStock(lines);
+      reserveStock(lines);
       const link = `${baseFor(req)}/order/${token}`;
       if (discount.ok) useDiscount(discount.code);
       const etransferOrder = getOrder(number);
@@ -379,7 +379,7 @@ app.post("/api/checkout", async (req, res) => {
     if (!stripe) {
       if (!DEMO) return res.status(503).json({ error: "Card payments are not configured yet. Choose e-Transfer, or add Stripe keys." });
       const { number, token } = createOrder({ ...orderBase, payment: "card", status: "paid", stripeSession: "demo" });
-      if (!MADE_TO_ORDER) reserveStock(lines);
+      reserveStock(lines);
       if (discount.ok) useDiscount(discount.code);
       const demoOrder = getOrder(number);
       activatePlans(demoOrder);
@@ -390,7 +390,7 @@ app.post("/api/checkout", async (req, res) => {
 
     const { number, token } = createOrder({ ...orderBase, payment: "card", status: "pending" });
     pendingOrder = number;
-    if (!MADE_TO_ORDER) reserveStock(lines);
+    reserveStock(lines);
 
     // Stripe needs a coupon object; create a one-shot one for this order.
     let couponId = null;
@@ -908,6 +908,7 @@ function parseProductBody(body) {
     tags: String(body.tags || "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 8),
     art: ART_IDS.includes(body.art) ? body.art : "generic",
     stock: Math.max(0, parseInt(body.stock, 10) || 0),
+    countStock: body.count_stock === "1",
     maxPerOrder: Math.min(MAX_ITEMS_PER_ORDER, Math.max(1, parseInt(body.max, 10) || 12)),
     sortOrder: Math.max(0, parseInt(body.sort, 10) || 100),
     active: body.active === "1",
@@ -990,7 +991,7 @@ app.post("/admin/orders/:number/status", adminAuth, (req, res) => {
   const allowed = ["pending", "awaiting_etransfer", "paid", "packed", "completed", "cancelled"];
   const status = String(req.body.status || "");
   if (!allowed.includes(status)) return res.status(400).send("Bad status.");
-  const order = setStatus(req.params.number, status, { moveStock: !MADE_TO_ORDER });
+  const order = setStatus(req.params.number, status);
   // e-Transfer plans are activated by hand here; card plans arrive via the webhook.
   if (order && ["paid", "packed", "completed"].includes(status)) activatePlans(order);
   if (order && status === "cancelled") cancelSubscriptionsForOrder(order.number);
@@ -1147,7 +1148,7 @@ app.use((_req, res) => res.status(404).send(render404()));
 // (catches orders left hanging while the container was down) and then every 30 min.
 // No email: the customer never finished paying. e-Transfer orders never expire.
 function sweepPendingOrders() {
-  const expired = expireStalePendingOrders(48 * 3600 * 1000, { moveStock: !MADE_TO_ORDER });
+  const expired = expireStalePendingOrders(48 * 3600 * 1000);
   if (expired.length) console.log(`expired unpaid orders: ${expired.join(", ")}`);
   const cards = expireSubscriptions();
   if (cards.length) console.log(`expired plans: ${cards.join(", ")}`);
