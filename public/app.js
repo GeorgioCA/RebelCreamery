@@ -317,6 +317,7 @@
     const s = e.target.closest("[data-step]");
     if (s && s.closest(".card, #qv")) {
       const input = s.closest(".stepper").querySelector("input");
+      if (input.disabled) return;
       const max = Number(input.max || 12);
       input.value = String(Math.min(max, Math.max(1, Number(input.value || 1) + Number(s.dataset.step))));
     }
@@ -801,3 +802,9 @@ document.addEventListener("click", async (e) => {
   btn.classList.add("copied");
   setTimeout(() => { btn.textContent = old; btn.classList.remove("copied"); }, 1600);
 });
+
+// A sold-out card keeps its quantity field disabled, so its stepper should look
+// and behave dead too — otherwise the arrows move a number nobody can order.
+for (const input of document.querySelectorAll(".stepper input:disabled")) {
+  for (const b of input.closest(".stepper").querySelectorAll("button")) b.disabled = true;
+}
