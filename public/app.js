@@ -438,7 +438,7 @@
             ...PLAN_WEEKS.map((w) => ({ w, main: `${w}-week subscription${w >= 12 ? " + free week" : ""}` }))
           ];
           const chosen = weekOpts.find((o) => o.w === weeksChoice) || weekOpts[0];
-          const tubTotal = weeksChoice ? credited(weeksChoice) * tubs : 1;
+          const tubTotal = weeksChoice ? credited(weeksChoice) * tubs : q;
           const ctl = l.p.subscribable ? `<div class="plan-controls">
             <details class="plan-pick">
               <summary>
